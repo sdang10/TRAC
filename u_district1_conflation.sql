@@ -136,7 +136,7 @@ WHERE corner.geom NOT IN (
 
 -- insert entrances --
 INSERT INTO conflation.conflation_test1 (osm_id, LABEL, tags, osm_geom)
-	SELECT point.osm_id, 'entrance' AS LABEL, point.tags AS tags, sw.geom AS osm_geom
+	SELECT sw.osm_id, 'entrance' AS LABEL, point.tags AS tags, sw.geom AS osm_geom
 	FROM osm_sidewalk_udistrict1 sw
 	JOIN (
 		SELECT *
