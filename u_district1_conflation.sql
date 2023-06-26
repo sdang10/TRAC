@@ -1,6 +1,6 @@
 ----------BOUNDING BOXES-------------
 
----------- OSM in u-district --------
+-- OSM in u-district --
 CREATE TABLE osm_sidewalk_udistrict1 AS (
 	SELECT *
 	FROM planet_osm_line
@@ -8,20 +8,33 @@ CREATE TABLE osm_sidewalk_udistrict1 AS (
 		AND tags -> 'footway' = 'sidewalk' -- ONLY footway = sidewalk
 		AND way && st_setsrid( st_makebox2d( st_makepoint(-13616323, 6049894), st_makepoint(-13615733, 6050671)), 3857)
 );
+-- rename geom column
 ALTER TABLE osm_sidewalk_udistrict1 RENAME COLUMN way TO geom;
-CREATE INDEX osm_sidewalk_udistrict1_geom ON osm_sidewalk_udistrict1 USING GIST (geom);
+CREATE INDEX osm_sidewalk_udistrict1_geom ON osm_sidewalk_udistrict1 USING GIST (geom); --???
 
   
----------- Points in u-district ------------
+-- Points in u-district --
 CREATE table osm_point_udistrict1 AS (
 	SELECT *
 	FROM planet_osm_point
 	WHERE way && st_setsrid( st_makebox2d( st_makepoint(-13616323, 6049894), st_makepoint(-13615733, 6050671) ), 3857)
 );
+-- rename geom column
 ALTER TABLE osm_point_udistrict1 RENAME COLUMN way TO geom;
 
 
---------- ARNOLD in u-district ----------
+-- crossing in u-district
+CREATE TABLE osm_crossing_udistrict1 AS (
+	SELECT *
+	FROM planet_osm_line
+	WHERE   highway = 'footway'
+		AND tags -> 'footway' = 'crossing' -- ONLY footway = sidewalk
+		AND way && st_setsrid( st_makebox2d( st_makepoint(-13616323, 6049894), st_makepoint(-13615733, 6050671) ), 3857)
+);
+-- rename geom
+ALTER TABLE osm_crossing_udistrict1 RENAME COLUMN way TO geom;
+
+-- ARNOLD in u-district --
 CREATE TABLE arnold.wapr_udistrict1 AS (
 	SELECT *
  	FROM arnold.wapr_linestring
@@ -30,21 +43,36 @@ CREATE TABLE arnold.wapr_udistrict1 AS (
 );
 
 
-----------TABLES----------
+
+----------PROCESS----------
 
 -- segmented roads --
+-- arnold gave us road geometries which varied in length but or the most part, the roads were very long, so to better
+-- associate roads to sidewalks (because one road can have many many sidewalks) we segmented the roads by intersection
 CREATE TABLE arnold.segment_test AS
 WITH intersection_points AS (
-  SELECT DISTINCT
-		m1.objectid oi1,
-		m1.routeid ri1,
+	SELECT DISTINCT
+		m1.objectid AS oi1, 
+		m1.routeid AS ri1, 
 		ST_Intersection(m1.geom, m2.geom) AS geom
-  FROM arnold.wapr_udistrict1 m1
-  JOIN arnold.wapr_udistrict1 m2
-		ON ST_Intersects(m1.geom, m2.geom)
-		AND m1.objectid <> m2.objectid
-);
-
+	FROM arnold.wapr_udistrict1 AS m1
+	JOIN arnold.wapr_udistrict1 AS m2 
+		ON ST_Intersects(m1.geom, m2.geom) AND m1.objectid <> m2.objectid 
+)
+SELECT
+	a.objectid, 
+	a.routeid, 
+	ST_collect(b.geom), 
+	ST_Split(a.geom, ST_collect(b.geom))
+FROM arnold.wapr_udistrict1 AS a
+JOIN intersection_points AS b 
+	ON a.objectid = b.oi1 AND a.routeid = b.ri1
+GROUP BY
+	a.objectid,
+	a.routeid,
+	a.geom;
+-- this makes a collection of linestrings and does not give us singe segmented linestrings
+-- so, we make this table to dump the collection into individual linestrings for each segment
 CREATE TABLE arnold.segment_test_line AS
 SELECT
 	objectid,
@@ -53,8 +81,12 @@ FROM arnold.segment_test;
 CREATE INDEX segment_test_line_geom ON arnold.segment_test_line USING GIST (geom);
 
   
--- longer parallel sidewalks to roads--
-  -- makes the table associating sidewalks with roads in arnold based on buffer, angle (parallel), and midpoint distance.
+-- big case--
+	-- makes the table associating sidewalks with roads in arnold based on buffer, angle (parallel), and midpoint distance.
+	-- this conflates all sidewalks over 10 meters to road segments so long it passes 2 tests
+		-- 1: the angle of the sidewalk is parallel to the angle of the road segment
+		-- 2: a sidewalk buffer of 2 intersects with a sidewalk buffer of 15
+	-- we then have the case where still 2 road segments pass the first 2 tests. In this case, we rank the sidewalks based on midpoint distance
 CREATE TABLE conflation.long_parallel AS
 WITH ranked_roads AS (
   SELECT
@@ -78,7 +110,7 @@ WITH ranked_roads AS (
     OR ABS(DEGREES(ST_Angle(road.geom, sidewalk.geom))) BETWEEN 350 AND 360) -- 360
    	AND ( ST_length(sidewalk.geom) > 10 ) -- IGNORE sidewalk that ARE shorter than 10 meters
 );
-  -- pulls only top ranked raods associated to sidewalks
+  -- pulls only top ranked sidewalks with the lowest midpoint distance
 SELECT
   sidewalk_id,
   road_id,
@@ -106,7 +138,7 @@ CREATE TABLE conflation.conflation_test1 (
 	osm_geom GEOMETRY(LineString, 3857)
 );
 
--- insert long and parallel sidewalk
+-- insert big case sidewalk
 INSERT INTO conflation.conflation_test1 (osm_id, LABEL, tags, st1_routeid, osm_geom)
 SELECT
 	sidewalk_id AS osm_id,
@@ -117,6 +149,7 @@ SELECT
 FROM conflation.long_parallel
 
 -- insert corners --
+	-- checks for 2 sidewalk connections on both endpoints of sidewalks not in the conflation table
 INSERT INTO conflation.conflation_test1 (osm_id, LABEL, tags, st1_routeid, st2_routeid, osm_geom)
 SELECT
 	corner.osm_id AS osm_id,
@@ -135,6 +168,7 @@ WHERE corner.geom NOT IN (
 	FROM conflation.long_parallel lp) AND (centerline1.road_routeid <> centerline2.road_routeid);
 
 -- insert entrances --
+	-- checks for if the sidewalk intersects with a point that has the tags entrance or wheelchair
 INSERT INTO conflation.conflation_test1 (osm_id, LABEL, tags, osm_geom)
 	SELECT sw.osm_id, 'entrance' AS LABEL, point.tags AS tags, sw.geom AS osm_geom
 	FROM osm_sidewalk_udistrict1 sw
@@ -144,23 +178,4 @@ INSERT INTO conflation.conflation_test1 (osm_id, LABEL, tags, osm_geom)
 		WHERE tags -> 'entrance' IS NOT NULL 
 			OR tags -> 'wheelchair' IS NOT NULL 
 	) AS point 
-		ON ST_intersects(sw.geom, point.geom)  
-
-
--------------- CHECKS --------------
-
--- check point: points that intersect with the sidewalk, but not in the conflation table
-SELECT
-	point.barrier,
-	point.tags AS point_tag,
-	sw.tags AS sw_tags,
-	point.geom, sw.geom
-FROM osm_point_udistrict1 point
-JOIN (
-	SELECT *
-	FROM osm_sidewalk_udistrict1 sidewalk
-	WHERE sidewalk.geom NOT IN (
-		SELECT osm_geom
-		FROM conflation.conflation_test1)
-	) sw
-	ON ST_intersects(sw.geom, point.geom);
+		ON ST_intersects(sw.geom, point.geom);
