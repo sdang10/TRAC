@@ -1,3 +1,5 @@
+-- WHAT TO FIX, WE NEED TO INCORPORATE START ADN END POINTS AND MEASURE FROM ARNOLD AND FIGURE OUT MULTILINESTRING IN ORDER TO CONFLATE
+
 ----- BOUNDING BOX SETUP -----
 
 -- OSM sidewalks in u-district --
@@ -37,11 +39,11 @@ ALTER TABLE shaneud1.osm_crossing RENAME COLUMN way TO geom;
 -- ARNOLD roads in u-district --
 -- for arnold, we wanted to change the shape column to linestring (instead of multilinestring M) to match geom type of osm
 -- to do this, we needed to keep track of original ID as separating one multilinestring can result in multiple linestrings
--- the og_objectid column keps track of the arnold object id when converting. 
-CREATE TABLE arnold.wapr_linestring (
- 	objectid SERIAL PRIMARY KEY,
-  	og_objectid INT8,
-  	routeid VARCHAR(75),
+-- the og_object_id column keps track of the arnold object id when converting. 
+CREATE TABLE shaneud1.arnold_wapr (
+ 	object_id SERIAL PRIMARY KEY,
+  	og_object_id INT8,
+  	route_id VARCHAR(75),
   	beginmeasure FLOAT8,
   	endmeasure FLOAT8,
   	shape_length FLOAT8,
@@ -49,7 +51,7 @@ CREATE TABLE arnold.wapr_linestring (
 );
 
 -- converting the MultiLineString geometries into LineString geometries
-INSERT INTO arnold.wapr_linestring (og_objectid, routeid, beginmeasure, endmeasure, shape_length, geom)
+INSERT INTO shaneud1.arnold_wapr (og_object_id, route_id, beginmeasure, endmeasure, shape_length, geom)
 	SELECT 
 		objectid, 
 		routeid, 
@@ -62,9 +64,9 @@ INSERT INTO arnold.wapr_linestring (og_objectid, routeid, beginmeasure, endmeasu
 -- table to use
 CREATE TABLE shaneud1.arnold_roads AS (
 	SELECT *
- 	FROM arnold.wapr_linestring
+ 	FROM shaneud1.arnold_wapr
 	WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13616323, 6049894), st_makepoint(-13615733, 6050671)), 3857)
-	ORDER BY objectid, routeid
+	ORDER BY object_id, route_id
 );
 
 
@@ -78,34 +80,34 @@ CREATE TABLE shaneud1.arnold_roads AS (
 CREATE TABLE shaneud1.arnold_road_break AS
 	WITH intersection_points AS (
 		SELECT DISTINCT
-			road1.objectid AS r1oid, 
-			road1.routeid AS r1rid, 
+			road1.object_id AS r1oid, 
+			road1.route_id AS r1rid, 
 			ST_Intersection(road1.geom, road2.geom) AS geom
 		FROM shaneud1.arnold_roads AS road1
 		JOIN shaneud1.arnold_roads AS road2
-			ON ST_Intersects(road1.geom, road2.geom) AND road1.objectid != road2.objectid 
+			ON ST_Intersects(road1.geom, road2.geom) AND road1.object_id != road2.object_id 
 	)
 	SELECT
-		arud1.objectid, 
-		arud1.og_objectid,
-		arud1.routeid, 
+		arud1.object_id, 
+		arud1.og_object_id,
+		arud1.route_id, 
 		ST_collect(ip.geom), 
 		ST_Split(arud1.geom, ST_collect(ip.geom))
 	FROM shaneud1.arnold_roads AS arud1
 	JOIN intersection_points AS ip 
-		ON arud1.objectid = ip.r1oid AND arud1.routeid = ip.r1rid
+		ON arud1.object_id = ip.r1oid AND arud1.route_id = ip.r1rid
 	GROUP BY
-		arud1.objectid,
-		arud1.og_objectid,
-		arud1.routeid,
+		arud1.object_id,
+		arud1.og_object_id,
+		arud1.route_id,
 		arud1.geom;
 -- this makes a collection of linestrings and does not give us single segment linestrings
 -- so, we make this table to dump the collection into individual linestrings for each segment
 CREATE TABLE shaneud1.arnold_road_segments AS
 	SELECT
-		objectid,
-		og_objectid,
-		routeid, 
+		object_id,
+		og_object_id,
+		route_id, 
 		(ST_Dump(st_split)).geom::geometry(LineString, 3857) AS geom
 	FROM shaneud1.arnold_road_break;
 
@@ -119,9 +121,9 @@ CREATE TABLE shaneud1.arnold_road_segments AS
 CREATE TABLE sconud1.big_case AS
 	WITH ranked_roads AS (
   		SELECT
-    		sw.osm_id AS osmid,
-    		road.og_objectid AS arnold_objectid,
-    		road.routeid AS arnold_routeid,
+    		sw.osm_id AS osm_id,
+    		road.og_object_id AS arnold_object_id,
+    		road.route_id AS arnold_route_id,
   			sw.geom AS sw_geom,
     		road.geom AS road_geom,
     		ABS(DEGREES(ST_Angle(road.geom, sw.geom))) AS angle_degree,
@@ -141,82 +143,227 @@ CREATE TABLE sconud1.big_case AS
 -- pulls only top ranked sidewalks with the lowest midpoint distance
 	SELECT
 		'sidewalk' AS LABEL,
-  		osmid,
-  		arnold_objectid,
-  		arnold_routeid,
+  		osm_id,
+  		arnold_object_id,
+  		arnold_route_id,
   		sw_geom,
   		road_geom
 	FROM ranked_roads
 	WHERE rank = 1;
 
--- creates a table for edges, cases where sidewalks meet at a corner without connecting
-CREATE TABLE sconud1.corners AS
-	SELECT
-		sw.osm_id AS osm_id,
-		'corner' AS LABEL,
-		road1.road_routeid AS road1,
-		road2.road_routeid AS st2_routeid,
-		sw.geom AS osm_geom
-	FROM shaneud1.osm_sw AS sw
-	JOIN sconud1.big_case AS sw1
-		ON st_intersects(st_startpoint(sw.geom), road1.sidewalk_geom)
-	JOIN sconud1.big_case AS sw2
-		ON st_intersects(st_endpoint(sw.geom), road2.sidewalk_geom)
-	WHERE sw.geom NOT IN (
-		SELECT bc.sidewalk_geom
-		FROM conflation.big_case AS bc
-	) 
-	AND (road1.road_routeid <> road2.road_routeid);
+
+-- checking what we have left
+SELECT *
+FROM shaneud1.osm_sw
+WHERE osm_id NOT IN (
+	SELECT osm_id FROM sconud1.big_case
+);
 
 
+-- creates a table for edges, cases where there is a sidewalk link connecting 2 sidewalks that meet at a corner without connecting
+CREATE TABLE sconud1.edge_case (
+	LABEL TEXT,
+    osm_id INT8,
+    arnold_road1_id INT8,
+    arnold_road2_id INT8,
+    osm_geom GEOMETRY(LineString, 3857),
+    arnold_road1_geom GEOMETRY(LineString, 3857),
+    arnold_road2_geom GEOMETRY(LineString, 3857)
+);
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
--- insert corners --
-	-- checks for 2 sidewalk connections on both endpoints of sidewalks not in the conflation table
-INSERT INTO conflation.conflation_test1 (osm_id, LABEL, tags, st1_routeid, st2_routeid, osm_geom)
+-- inserts values into the table as edges if they intersct with 2 different sidewalks from big case on both endpoints and edge is not in big case
+INSERT INTO sconud1.edge_case (LABEL, osm_id, arnold_road1_id, arnold_road2_id, osm_geom, arnold_road1_geom, arnold_road2_geom)
 SELECT
-	corner.osm_id AS osm_id,
-	'corner' AS LABEL,
-	corner.tags,
-	centerline1.road_routeid AS st1_routeid,
-	centerline2.road_routeid AS st2_routeid,
-	corner.geom AS osm_geom
-FROM osm_sidewalk_udistrict1 corner
-JOIN conflation.long_parallel centerline1
-	ON st_intersects(st_startpoint(corner.geom), centerline1.sidewalk_geom)
-JOIN conflation.long_parallel centerline2
-	ON st_intersects(st_endpoint(corner.geom), centerline2.sidewalk_geom)
-WHERE corner.geom NOT IN (
-	SELECT lp.sidewalk_geom
-	FROM conflation.long_parallel lp) AND (centerline1.road_routeid <> centerline2.road_routeid);
+	'edge',
+    sw.osm_id AS osm_id,
+    big_case1.arnold_object_id AS arnold_road1_id,
+    big_case2.arnold_object_id AS arnold_road2_id,
+    sw.geom AS osm_geom,
+    big_case1.road_geom AS arnold_road1_geom,
+    big_case2.road_geom AS arnold_road2_geom
+FROM shaneud1.osm_sw AS sw
+JOIN sconud1.big_case AS big_case1
+    ON ST_Intersects(ST_StartPoint(sw.geom), big_case1.sw_geom)
+JOIN sconud1.big_case AS big_case2
+    ON ST_Intersects(ST_EndPoint(sw.geom), big_case2.sw_geom)
+WHERE sw.geom NOT IN (
+	SELECT big_case.sw_geom
+	FROM sconud1.big_case AS big_case
+) AND (
+	big_case1.osm_id <> big_case2.osm_id);
 
--- insert entrances --
-	-- checks for if the sidewalk intersects with a point that has the tags entrance or wheelchair
-INSERT INTO conflation.conflation_test1 (osm_id, LABEL, tags, osm_geom)
-	SELECT sw.osm_id, 'entrance' AS LABEL, point.tags AS tags, sw.geom AS osm_geom
-	FROM osm_sidewalk_udistrict1 sw
+   
+-- check our table
+SELECT * FROM sconud1.edge_case
+   
+
+-- checking what we have left
+-- note: the edges that show furthst north are not connected to street on top side because of bbox cut-off
+SELECT *
+FROM shaneud1.osm_sw
+WHERE osm_id NOT IN (
+    SELECT osm_id FROM sconud1.big_case
+) AND osm_id NOT IN (
+    SELECT osm_id FROM sconud1.edge_case
+);
+
+-- check bbox cut-off  here
+SELECT * FROM shaneud1.osm_sw
+
+
+-- creating table for entrances. this is the case when it is an exception to big case and edge case and we have classified them as entrances from
+-- being smaller than 10 meters, and only intersecting with a big case sidewalk on one side. We also check to see if the sidewalk segment intersects with
+-- a point from osm points that holds a tag with "entrance" 
+-- NOTE: for now this does not conflate with anything, but we make this special case to define and justify it's reasoning to classify and move on from these "sidewalk" data
+
+-- check for intersection of points and entrances
+SELECT 
+	sw.osm_id AS osm_sw_id, 
+	point.osm_id AS osm_point_id,
+	sw.tags AS sw_tags,
+	point.tags AS point_tags,
+	sw.geom AS osm_sw_geom,
+	point.geom AS osm_point_geom
+FROM shaneud1.osm_sw sw
+JOIN (
+	SELECT *
+	FROM shaneud1.osm_point 
+	WHERE tags -> 'entrance' IS NOT NULL 
+		OR tags -> 'wheelchair' IS NOT NULL 
+) AS point 
+ON ST_intersects(sw.geom, point.geom);
+	
+-- create the table	
+CREATE TABLE sconud1.entrance_case (
+	LABEL TEXT,
+	osm_sw_id INT8,
+	osm_point_id INT8,
+	sw_tags hstore,
+	point_tags hstore,
+	osm_sw_geom GEOMETRY(LineString, 3857),
+	osm_point_geom GEOMETRY(Point, 3857)
+);
+
+INSERT INTO sconud1.entrance_case (LABEL, osm_sw_id, osm_point_id, sw_tags, point_tags, osm_sw_geom, osm_point_geom)
+	SELECT 
+		'entrance',
+		sw.osm_id AS osm_sw_id, 
+		point.osm_id AS osm_point_id,
+		sw.tags AS sw_tags,
+		point.tags AS point_tags,
+		sw.geom AS osm_sw_geom,
+		point.geom AS osm_point_geom
+	FROM shaneud1.osm_sw AS sw
 	JOIN (
 		SELECT *
-		FROM osm_point_udistrict1 
+		FROM shaneud1.osm_point AS point
 		WHERE tags -> 'entrance' IS NOT NULL 
 			OR tags -> 'wheelchair' IS NOT NULL 
 	) AS point 
-		ON ST_intersects(sw.geom, point.geom);
+		ON ST_intersects(sw.geom, point.geom)
+	WHERE sw.osm_id NOT IN (
+		SELECT osm_id
+		FROM sconud1.big_case
+		UNION ALL
+		SELECT osm_id
+		FROM sconud1.edge_case
+	);
+
+-- check our table
+SELECT * FROM sconud1.entrance_case
+
+-- check what we have left
+SELECT *
+FROM shaneud1.osm_sw
+WHERE osm_id NOT IN (
+    SELECT osm_id FROM sconud1.big_case
+) AND osm_id NOT IN (
+    SELECT osm_id FROM sconud1.edge_case
+) AND osm_id NOT IN (
+	SELECT osm_sw_id FROM sconud1.entrance_case
+);
+-- what we have left are primarily connecting links and special case sidewalk data
+
+
+-- first we will conflate crossing to roads
+-- checks
+SELECT * FROM shaneud1.osm_crossing
+
+SELECT *
+FROM shaneud1.osm_sw
+WHERE osm_id NOT IN (
+    SELECT osm_id FROM sconud1.big_case
+) AND osm_id NOT IN (
+    SELECT osm_id FROM sconud1.edge_case
+) AND osm_id NOT IN (
+	SELECT osm_sw_id FROM sconud1.entrance_case
+) AND ST_Length(geom) < 10; -- this is filtering the 2 special cases
+
+-- observation: bbox cut-off -> some crossing wont have connecting links
+SELECT * FROM shaneud1.osm_sw
+
+
+-- creating the table for crossing
+CREATE TABLE sconud1.crossing_case (
+	LABEL TEXT,
+	osm_id INT8,
+	arnold_road_id INT8,
+	arnold_route_id VARCHAR(75),
+	osm_crossing_geom GEOMETRY(LineString, 3857),
+	arnold_road_geom GEOMETRY(LineString, 3857)
+);
+
+-- inserts after conflating crossing to roads based on intersection
+INSERT INTO sconud1.crossing_case (LABEL, osm_id, arnold_road_id, arnold_route_id, osm_crossing_geom, arnold_road_geom)
+	SELECT 
+		'crossing',
+		crossing.osm_id AS osm_crossing_id,
+		road.og_object_id AS arnold_road_id, 
+		road.route_id AS arnold_route_id,
+		crossing.geom AS osm_crossing_geom,
+		road.geom AS arnold_road_geom
+	FROM shaneud1.osm_crossing AS crossing
+	JOIN shaneud1.arnold_road_segments AS road ON ST_Intersects(crossing.geom, road.geom);
+-- 1/60 crossing was not conflated due to not intersecting with a road
+
+-- check 
+-- NOTE: the special crossing case is the only one in this bbox that has 'no' under access column, NULL otherwise
+SELECT *
+FROM shaneud1.osm_crossing
+WHERE osm_id NOT IN (
+    SELECT osm_id FROM sconud1.crossing_case
+);
+
+SELECT *
+FROM shaneud1.osm_sw AS sw
+WHERE osm_id NOT IN (
+    SELECT osm_id FROM sconud1.big_case
+) 
+AND osm_id NOT IN (
+    SELECT osm_id FROM sconud1.edge_case
+) 
+AND osm_id NOT IN (
+    SELECT osm_sw_id FROM sconud1.entrance_case
+)
+AND EXISTS (
+    SELECT 1
+    FROM shaneud1.osm_crossing AS crossing
+    WHERE ST_Intersects(sw.geom, crossing.geom)
+)
+AND ST_Length(sw.geom) < 10;
+
+
+
+
+
+
+
+
+
+
+-- from there we can associate acrossing link to the road the crossing is conflated to
+	-- note: we don't associate crossing link to sidewalk road bc a connecting link is vulnerable to be connected to more than 1 sidewalk
+	-- we really only want a crossing link to be a
+
+
