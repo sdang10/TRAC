@@ -1,3 +1,74 @@
+---- DATABASE SETUP ----
+
+
+--- OSM ---
+-- planet_osm_line
+-- planet_osm_point
+-- planet_osm_polygon
+-- planet_osm_roads
+-- spatial_ref_sys
+
+-- we need to change 'way' to 'geom' column name
+
+CREATE TABLE shane.osm_lines AS (
+	SELECT * 
+	FROM public.planet_osm_line
+)
+ALTER TABLE shane.osm_lines RENAME COLUMN way TO geom;
+
+
+CREATE TABLE shane.osm_points AS (
+	SELECT * 
+	FROM public.planet_osm_point
+)
+ALTER TABLE shane.osm_points RENAME COLUMN way TO geom;
+
+
+CREATE TABLE shane.osm_polygons AS (
+	SELECT * 
+	FROM public.planet_osm_polygon
+)
+ALTER TABLE shane.osm_polygons RENAME COLUMN way TO geom;
+
+
+CREATE TABLE shane.osm_roads AS (
+	SELECT * 
+	FROM public.planet_osm_roads
+)
+ALTER TABLE shane.osm_roads RENAME COLUMN way TO geom;
+
+
+--- ARNOLD ---
+-- wapr_hpms_subittal 
+
+-- we need to change multilinestring into linestring
+-- put spacers between words like objectid, beginmeasure -> object_id, begin_measure  etc.
+
+CREATE TABLE shane.arnold_lines (
+  	og_object_id INT8,
+  	object_id SERIAL,
+  	route_id VARCHAR(75),
+  	begin_measure FLOAT8,
+  	end_measure FLOAT8,
+  	shape_length FLOAT8,
+  	geom geometry(linestring, 3857),
+  	shape geometry(multilinestringm, 3857)
+);
+
+INSERT INTO shane.arnold_lines (og_object_id, route_id, begin_measure, end_measure, shape_length, geom, shape)
+	SELECT  
+		objectid, 
+		routeid, 
+		beginmeasure, 
+		endmeasure, 
+		shape_length, 
+		ST_Force2D((ST_Dump(shape)).geom)::geometry(linestring, 3857),
+		shape
+	FROM arnold.wapr_hpms_submittal;
+
+
+
+
 ---- BOUNDING BOXES ----
 
 
@@ -46,16 +117,16 @@ CREATE TABLE shane.ud1_arnold_lines AS (
 -- associate roads to sidewalks (because one road can have many many sidewalks) we segmented the roads by road intersection
 CREATE TABLE shane.ud1_arnold_segment_collections AS
 	WITH intersection_points AS (
-		SELECT DISTINCT
+		SELECT DISTINCT 
 			road1.object_id AS road1_object_id, 
 			road1.route_id AS road1_route_id, 
-			ST_Intersection(road1.geom, road2.geom) AS geom
+	  		(ST_DumpPoints(ST_Intersection(road1.geom, road2.geom))).geom AS geom
 		FROM shane.ud1_arnold_lines AS road1
 		JOIN shane.ud1_arnold_lines AS road2
-			ON ST_Intersects(road1.geom, road2.geom) AND road1.object_id != road2.object_id 
+			ON ST_Intersects(road1.geom, road2.geom) AND ST_Equals(road1.geom, road2.geom) IS FALSE
 	)
 	SELECT
-		ud1_arnold_lines.og_object_id, 
+	  	ud1_arnold_lines.og_object_id, 
 		ud1_arnold_lines.object_id,
 		ud1_arnold_lines.route_id,
 		ud1_arnold_lines.begin_measure,
@@ -63,11 +134,11 @@ CREATE TABLE shane.ud1_arnold_segment_collections AS
 		ud1_arnold_lines.shape_length,
 		ud1_arnold_lines.geom,
 		ud1_arnold_lines.shape,
-		ST_Collect(intersection_points.geom), 
+		ST_collect(intersection_points.geom),
 		ST_Split(ud1_arnold_lines.geom, ST_Collect(intersection_points.geom))
 	FROM shane.ud1_arnold_lines AS ud1_arnold_lines
 	JOIN intersection_points AS intersection_points 
-		ON ud1_arnold_lines.object_id = intersection_points.road1_object_id AND ud1_arnold_lines.route_id = intersection_points.road1_route_id
+		ON ud1_arnold_lines.object_id = intersection_points.road1_object_id 
 	GROUP BY
 		ud1_arnold_lines.og_object_id,
 		ud1_arnold_lines.object_id,
@@ -77,6 +148,7 @@ CREATE TABLE shane.ud1_arnold_segment_collections AS
 	  	ud1_arnold_lines.shape_length,
 		ud1_arnold_lines.geom,
 		ud1_arnold_lines.shape;
+	
 	
 -- this makes a collection of linestrings and does not give us single segment linestrings
 -- so, we make this table to dump the collection into individual linestrings for each segment
@@ -362,7 +434,7 @@ AND ST_Length(sw.geom) < 10;
 --- checkpoint ---
 SELECT * FROM shane.ud1_conflation_crossing_link_case
 
--- the remaining special cases count: 6
+-- the remaining special cases, count: 6
 -- the first 3 are due to bounding box cut-off
 SELECT *
 FROM shane.ud1_osm_sw
@@ -375,6 +447,19 @@ WHERE osm_id NOT IN (
 ) AND osm_id NOT IN (
 	SELECT osm_sw_id FROM shane.ud1_conflation_crossing_link_case
 );
+
+-- checking which roads weren't used if any, count: 0
+SELECT *
+FROM shane.ud1_arnold_lines
+WHERE shape NOT IN (
+    SELECT shape FROM shane.ud1_conflation_general_case
+) AND shape NOT IN (
+    SELECT shape FROM shane.ud1_conflation_edge_case
+) AND shape NOT IN (
+	SELECT shape FROM shane.ud1_conflation_crossing_link_case
+);
+
+
 
 -- scoring system based on variables and deliminators that are determined by us:
 -- length
