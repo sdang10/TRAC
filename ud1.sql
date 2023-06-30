@@ -164,6 +164,7 @@ CREATE TABLE shane.ud1_arnold_segments AS
 		shape
 	FROM shane.ud1_arnold_segment_collections;
 
+-- checkpoint --
 SELECT * FROM shane.ud1_arnold_segments
 
 
