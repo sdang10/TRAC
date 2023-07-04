@@ -100,42 +100,50 @@ SELECT * FROM shane.ud1_arnold_segments
 
 --- general case ---
 -- makes the table associating sidewalks with roads in arnold based on buffer, angle (parallel), and midpoint distance.
--- this conflates all sidewalks over 10 meters to road segments so long it passes 2 tests
+-- this conflates all sidewalks over 8 meters to road segments so long it passes 2 tests
 	-- 1: the angle of the sidewalk is parallel to the angle of the road segment
 	-- 2: a sidewalk buffer of 2 intersects with a sidewalk buffer of 15
 -- we then have the case where still 2 road segments pass the first 2 tests. In this case, we rank the sidewalks based on midpoint distance
 CREATE TABLE shane.ud1_conflation_general_case AS
 	WITH ranked_roads AS (
-  		SELECT
-    		sw.osm_id AS osm_id,
+		SELECT
+			sw.osm_id AS osm_id,
   			sw.geom AS osm_geom,
   			road.og_object_id AS arnold_object_id,
     		road.geom AS arnold_geom,
     		road.shape AS arnold_shape,
-    		ABS(DEGREES(ST_Angle(road.geom, sw.geom))) AS angle_degree,
-    		ST_Distance(ST_LineInterpolatePoint(road.geom, 0.5), 
-    		ST_LineInterpolatePoint(sw.geom, 0.5)) AS midpoint_distance,
-    		-- rank this based on the distance of the midpoint of the sidewalk to the midpoint of the road
-    		ROW_NUMBER() OVER (PARTITION BY sw.geom ORDER BY ST_Distance(ST_LineInterpolatePoint(road.geom, 0.5), ST_LineInterpolatePoint(sw.geom, 0.5)) ) AS RANK
-  		FROM shane.ud1_osm_sw AS sw
-  		JOIN shane.ud1_arnold_segments AS road
-  			ON ST_Intersects(ST_Buffer(sw.geom, 2), ST_Buffer(road.geom, 15))  -- is there a better number?
-  		WHERE (
-			ABS(DEGREES(ST_Angle(road.geom, sw.geom))) BETWEEN 0 AND 10 			-- 0
-    		OR ABS(DEGREES(ST_Angle(road.geom, sw.geom))) BETWEEN 170 AND 190 	-- 180
-    		OR ABS(DEGREES(ST_Angle(road.geom, sw.geom))) BETWEEN 350 AND 360) 	-- 360
-   		AND ( ST_length(sw.geom) > 8 ) -- IGNORE sidewalk shorter than 8 meters
+		  	ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ) AS seg_geom,
+		  	-- calculate the coverage of sidewalk within the buffer of the road
+		  	ST_Length(ST_Intersection(sw.geom, ST_Buffer(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), 18))) / ST_Length(sw.geom) AS sw_coverage_bigroad,
+		  	-- rank this based on the distance of the midpoint of the sidewalk to the midpoint of the road
+		  	ROW_NUMBER() OVER (
+		  		PARTITION BY sw.geom
+		  		ORDER BY ST_distance( 
+		  			ST_LineSubstring( road.geom,
+		  			LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
+		  			GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ),
+		  			sw.geom )
+		  	) AS RANK
+		FROM shane.ud1_osm_sw AS sw
+		JOIN shane.ud1_arnold_lines AS road 
+			ON ST_Intersects(ST_Buffer(sw.geom, 5), ST_Buffer(road.geom, 15))
+		WHERE (
+			ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 0 AND 10 -- 0 
+			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 170 AND 190 -- 180
+			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 350 AND 360 ) -- 360
+		AND (ST_Length(sw.geom) > 8)
 	)
--- pulls only top ranked sidewalks with the lowest midpoint distance
-	SELECT
+	SELECT DISTINCT
 		'sidewalk' AS osm_label,
-  		osm_id,
-  		osm_geom,
-  		arnold_object_id,
-  		arnold_geom,
-  		arnold_shape
-	FROM ranked_roads
-	WHERE rank = 1;
+	  	osm_id,
+	  	osm_geom,
+	  	arnold_object_id,
+	  	arnold_geom,
+	  	arnold_shape
+	FROM
+		ranked_roads
+	WHERE
+		rank = 1;
 
 
 --- checkpoint ---
