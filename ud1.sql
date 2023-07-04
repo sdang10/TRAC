@@ -100,7 +100,7 @@ SELECT * FROM shane.ud1_arnold_segments
 
 --- general case ---
 -- makes the table associating sidewalks with roads in arnold based on buffer, angle (parallel), and midpoint distance.
--- this conflates all sidewalks over 8 meters to road segments so long it passes 2 tests
+-- this conflates all sidewalks over 10 meters to road segments so long it passes 2 tests
 	-- 1: the angle of the sidewalk is parallel to the angle of the road segment
 	-- 2: a sidewalk buffer of 2 intersects with a sidewalk buffer of 15
 -- we then have the case where still 2 road segments pass the first 2 tests. In this case, we rank the sidewalks based on midpoint distance
@@ -314,6 +314,7 @@ INSERT INTO shane.ud1_conflation_crossing_case (osm_label, osm_id, osm_geom, arn
 	FROM shane.ud1_osm_crossing AS crossing
 	JOIN shane.ud1_arnold_segments AS road ON ST_Intersects(crossing.geom, road.geom);
 -- 1/60 crossing was not conflated due to not intersecting with a road
+-- NOTE: has a value of "no" in the access column, and it is a crossing for a the bus lane according to observation via google maps
 
 
 --- check point ---
@@ -332,7 +333,7 @@ WHERE osm_id NOT IN (
 -- from there we can associate a crossing link to the road the crossing is conflated to
 -- note: we don't associate crossing link to sidewalk road bc a connecting link is vulnerable to be connected to more than 1 sidewalk
 
-CREATE TABLE shane.ud1_conflation_crossing_link_case (
+CREATE TABLE shane.ud1_conflation_connecting_link_case (
 	osm_label TEXT,
 	osm_sw_id INT8,
 	osm_sw_geom GEOMETRY(LineString, 3857),
@@ -345,9 +346,9 @@ CREATE TABLE shane.ud1_conflation_crossing_link_case (
 
 
 
-INSERT INTO shane.ud1_conflation_crossing_link_case (osm_label, osm_sw_id, osm_sw_geom, osm_crossing_id, osm_crossing_geom, arnold_road_id, arnold_road_geom, arnold_road_shape)
+INSERT INTO shane.ud1_conflation_connecting_link_case (osm_label, osm_sw_id, osm_sw_geom, osm_crossing_id, osm_crossing_geom, arnold_road_id, arnold_road_geom, arnold_road_shape)
 SELECT
-    'crossing link' AS osm_label,
+    'connecting link' AS osm_label,
     sw.osm_id AS osm_sw_id,
     sw.geom AS osm_sw_geom,
     crossing.osm_id AS osm_crossing_id,
@@ -367,7 +368,8 @@ AND sw.osm_id NOT IN (
 AND sw.osm_id NOT IN (
     SELECT osm_sw_id FROM shane.ud1_conflation_entrance_case
 )
-AND ST_Length(sw.geom) < 10;
+AND ST_Length(sw.geom) < 8;
+
 
 
 --- checkpoint ---
@@ -384,7 +386,7 @@ WHERE osm_id NOT IN (
 ) AND osm_id NOT IN (
 	SELECT osm_sw_id FROM shane.ud1_conflation_entrance_case
 ) AND osm_id NOT IN (
-	SELECT osm_sw_id FROM shane.ud1_conflation_crossing_link_case
+	SELECT osm_sw_id FROM shane.ud1_conflation_connecting_link_case
 );
 
 -- checking which roads weren't used if any, count: 0
@@ -395,9 +397,8 @@ WHERE shape NOT IN (
 ) AND shape NOT IN (
     SELECT shape FROM shane.ud1_conflation_edge_case
 ) AND shape NOT IN (
-	SELECT shape FROM shane.ud1_conflation_crossing_link_case
+	SELECT shape FROM shane.ud1_conflation_connecting_link_case
 );
-
 
 
 -- scoring system based on variables and deliminators that are determined by us:
