@@ -124,7 +124,7 @@ CREATE TABLE shane.ud1_conflation_general_case AS
 			ABS(DEGREES(ST_Angle(road.geom, sw.geom))) BETWEEN 0 AND 10 			-- 0
     		OR ABS(DEGREES(ST_Angle(road.geom, sw.geom))) BETWEEN 170 AND 190 	-- 180
     		OR ABS(DEGREES(ST_Angle(road.geom, sw.geom))) BETWEEN 350 AND 360) 	-- 360
-   		AND ( ST_length(sw.geom) > 10 ) -- IGNORE sidewalk that ARE shorter than 10 meters
+   		AND ( ST_length(sw.geom) > 8 ) -- IGNORE sidewalk shorter than 8 meters
 	)
 -- pulls only top ranked sidewalks with the lowest midpoint distance
 	SELECT
@@ -136,6 +136,7 @@ CREATE TABLE shane.ud1_conflation_general_case AS
   		arnold_shape
 	FROM ranked_roads
 	WHERE rank = 1;
+
 
 --- checkpoint ---
 SELECT * FROM shane.ud1_arnold_segments
