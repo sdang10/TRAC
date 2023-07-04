@@ -389,15 +389,17 @@ WHERE osm_id NOT IN (
 	SELECT osm_sw_id FROM shane.ud1_conflation_connecting_link_case
 );
 
--- checking which roads weren't used if any, count: 0
+-- checking which roads weren't used if any, count: 10
 SELECT *
 FROM shane.ud1_arnold_lines
 WHERE shape NOT IN (
-    SELECT shape FROM shane.ud1_conflation_general_case
+    SELECT arnold_shape FROM shane.ud1_conflation_general_case
 ) AND shape NOT IN (
-    SELECT shape FROM shane.ud1_conflation_edge_case
+    SELECT arnold_road1_shape FROM shane.ud1_conflation_edge_case
 ) AND shape NOT IN (
-	SELECT shape FROM shane.ud1_conflation_connecting_link_case
+	SELECT arnold_road2_shape FROM shane.ud1_conflation_edge_case
+) AND shape NOT IN (
+	SELECT arnold_road_shape FROM shane.ud1_conflation_connecting_link_case
 );
 
 
