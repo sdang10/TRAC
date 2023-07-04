@@ -9,14 +9,14 @@ CREATE TABLE shane.bvu1_osm_sw AS (
 	FROM shane.osm_lines
 	WHERE	highway = 'footway'
 		AND tags -> 'footway' = 'sidewalk' -- ONLY footway = sidewalk
-		AND geom && st_setsrid( st_makebox2d( st_makepoint(-13604353,6043721), st_makepoint(-13602515,6045839)), 3857)
-); -- count: 422
+		AND geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857)
+); -- count: 255
 
 -- OSM points --
 CREATE TABLE shane.bvu1_osm_point AS (
 	SELECT *
 	FROM shane.osm_points
-	WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13604353,6043721), st_makepoint(-13602515,6045839)), 3857)
+	WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857)
 ); 
 
 -- OSM crossing -- 
@@ -25,15 +25,15 @@ CREATE TABLE shane.bvu1_osm_crossing AS (
 	FROM shane.osm_lines
 	WHERE   highway = 'footway'
 		AND tags -> 'footway' = 'crossing' -- ONLY footway = crossing
-		AND geom && st_setsrid( st_makebox2d( st_makepoint(-13604353,6043721), st_makepoint(-13602515,6045839)), 3857)
-); -- count: 202
+		AND geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857)
+); -- count: 114
 
 -- ARNOLD roads --
 CREATE TABLE shane.bvu1_arnold_lines AS (
 	SELECT *
  	FROM shane.arnold_lines
-	WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13604353,6043721), st_makepoint(-13602515,6045839)), 3857)
-); -- count: 89
+	WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857)
+); -- count: 41
 
 
 
@@ -143,18 +143,18 @@ CREATE TABLE shane.bvu1_conflation_general_case AS
 	FROM
 		ranked_roads
 	WHERE
-		rank = 1;
+		rank = 1; -- count 138
 
 
 --- checkpoint ---
 SELECT * FROM shane.bvu1_arnold_segments
-SELECT * FROM shane.bvu1_conflation_general_case -- count: 193
+SELECT * FROM shane.bvu1_conflation_general_case
 
 SELECT *
 FROM shane.bvu1_arnold_lines
 WHERE shape NOT IN (
-	SELECT shape FROM shane.bvu1_conflation_general_case
-); -- every road was already used count: 0
+	SELECT arnold_shape FROM shane.bvu1_conflation_general_case
+); -- how many roads weren't used yet? count: 29
 
 SELECT *
 FROM shane.bvu1_osm_sw
