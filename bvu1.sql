@@ -138,7 +138,7 @@ CREATE TABLE shane.bvu1_conflation_general_case AS
 	  	osm_id,
 	  	osm_geom,
 	  	arnold_object_id,
-	  	arnold_geom,
+	  	seg_geom AS arnold_geom,
 	  	arnold_shape
 	FROM
 		ranked_roads
@@ -147,7 +147,6 @@ CREATE TABLE shane.bvu1_conflation_general_case AS
 
 
 --- checkpoint ---
-SELECT * FROM shane.bvu1_arnold_segments
 SELECT * FROM shane.bvu1_conflation_general_case
 
 SELECT *
@@ -160,65 +159,18 @@ SELECT *
 FROM shane.bvu1_osm_sw
 WHERE osm_id NOT IN (
 	SELECT osm_id FROM shane.bvu1_conflation_general_case
-);
+); -- how many have NOT been classified yet? count: 117
 
+SELECT * FROM shane.bvu1_arnold_lines
 
+SELECT * FROM shane.arnold_lines
 
+-- checking beyond bbox to see if roads were cut off
+SELECT *
+FROM shane.arnold_lines
+WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13604049,6043723), st_makepoint(-13602226,6044848)), 3857)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+-- found this area lacks road data
 
 
 
@@ -261,7 +213,7 @@ WHERE sw.geom NOT IN (
 	general_case1.osm_id <> general_case2.osm_id
 ) AND (
 	ST_Length(sw.geom) < 8
-); -- count: 13
+); -- count: 12
 
    
 -- checkpoint --
@@ -277,6 +229,17 @@ WHERE osm_id NOT IN (
 ) AND osm_id NOT IN (
     SELECT osm_id FROM shane.bvu1_conflation_edge_case
 );
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -860,13 +823,6 @@ WHERE shape NOT IN (
 ) AND shape NOT IN (
 	SELECT arnold_road_shape FROM shane.bvu1_conflation_connecting_link_case
 );
-
-
--- scoring system based on variables and deliminators that are determined by us:
--- length
--- buffer
--- angle
-
 
 
 -- scoring system based on variables and deliminators that are determined by us:
