@@ -104,7 +104,7 @@ SELECT * FROM shane.bvu1_arnold_segments
 	-- 1: the angle of the sidewalk is parallel to the angle of the road segment
 	-- 2: a sidewalk buffer of 2 intersects with a sidewalk buffer of 15
 -- we then have the case where still 2 road segments pass the first 2 tests. In this case, we rank the sidewalks based on midpoint distance
-CREATE TABLE shane.bvu1_conflation_general_case AS
+CREATE TABLE shane.bvu1_conflation_general_case_test AS
 	WITH ranked_roads AS (
 		SELECT
 			sw.osm_id AS osm_id,
@@ -126,12 +126,11 @@ CREATE TABLE shane.bvu1_conflation_general_case AS
 		  	) AS RANK
 		FROM shane.bvu1_osm_sw AS sw
 		JOIN shane.bvu1_arnold_lines AS road 
-			ON ST_Intersects(ST_Buffer(sw.geom, 5), ST_Buffer(road.geom, 15))
+			ON ST_Intersects(ST_Buffer(sw.geom, 5), ST_Buffer(road.geom, 25))
 		WHERE (
 			ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 0 AND 10 -- 0 
 			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 170 AND 190 -- 180
 			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 350 AND 360 ) -- 360
-		AND (ST_Length(sw.geom) > 8)
 	)
 	SELECT DISTINCT
 		'sidewalk' AS osm_label,
@@ -170,7 +169,37 @@ SELECT *
 FROM shane.arnold_lines
 WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13604049,6043723), st_makepoint(-13602226,6044848)), 3857)
 
+-- OBSERVATIONS: 
 -- found this area lacks road data
+	-- special cases where sw with no road to conflate to: 853044392, 862758193, 853044396, 853044399
+-- cases where buffer is not big enough? : 521965206
+-- incline = '': lowered curb for crossing/driveway/etc.
+-- wheelchair = 'yes': wheelchair access
+
+
+
+SELECT *
+FROM shane.bvu1_osm_sw
+WHERE osm_id IN (
+	SELECT osm_id FROM shane.bvu1_conflation_general_case
+); 
+
+SELECT *
+FROM shane.bvu1_osm_sw
+WHERE osm_id IN (
+	SELECT osm_id FROM shane.bvu1_conflation_general_case_test
+); 
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -829,3 +858,4 @@ WHERE shape NOT IN (
 -- length
 -- buffer
 -- angle
+
