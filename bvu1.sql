@@ -21,7 +21,7 @@ CREATE TABLE shane.bvu1_osm_point AS (
 	WHERE geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857)
 ); 
 
--- OSM crossing -- 
+-- OSM crossings -- 
 CREATE TABLE shane.bvu1_osm_crossing AS (
 	SELECT *
 	FROM shane.osm_lines
@@ -47,24 +47,24 @@ CREATE TABLE shane.bvu1_osm_footway_null AS (
 			geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857)
 ); -- count: 270
 
---- OSM connecting link ---
+--- OSM connecting links ---
 CREATE TABLE shane.bvu1_osm_connecting_links AS (
 	SELECT DISTINCT sw.*
 	FROM shane.bvu1_osm_sw AS sw
 	JOIN shane.bvu1_osm_crossing AS crossing
     ON ST_Intersects(sw.geom, crossing.geom)
     WHERE ST_Length(sw.geom) < 12
-)
-UNION
-SELECT DISTINCT fn.*
-FROM shane.bvu1_osm_footway_null AS fn
-JOIN shane.bvu1_osm_crossing AS crossing
-    ON ST_Intersects(fn.geom, crossing.geom)
-WHERE ST_Length(fn.geom) < 12; -- count: 134
+) UNION
+	SELECT DISTINCT fn.*
+	FROM shane.bvu1_osm_footway_null AS fn
+	JOIN shane.bvu1_osm_crossing AS crossing
+    	ON ST_Intersects(fn.geom, crossing.geom)
+	WHERE ST_Length(fn.geom) < 12; -- count: 134
+
+SELECT * FROM shane.bvu1_osm_connecting_links
 
 
 ---- PROCESS ----
-
 
 
 --- segmented roads ---
@@ -125,7 +125,6 @@ SELECT * FROM shane.bvu1_arnold_segments
 
 
 
-
 --- general case ---
 
 -- makes the table associating sidewalks with roads in arnold based on buffer, angle (parallel), and midpoint distance.
@@ -174,10 +173,9 @@ CREATE TABLE shane.bvu1_conflation_general_case AS
 		rank = 1; -- count 184
 		
 		
-		
-		
 
 --- checkpoint ---
+		
 SELECT * FROM shane.bvu1_conflation_general_case
 
 SELECT * FROM shane.bvu1_osm_sw AS sw
@@ -229,16 +227,6 @@ WHERE osm_id IN (
 
 
 
-
-
-
-
-
-
-    
-    
-    
-    
     
 --- crossing case ---
 
@@ -280,12 +268,12 @@ INSERT INTO shane.bvu1_conflation_crossing_case (osm_label, osm_id, osm_geom, ar
 		road.geom AS arnold_road_geom,
 		road.shape AS arnold_road_shape
 	FROM shane.bvu1_osm_crossing AS crossing
-	JOIN shane.bvu1_arnold_segments AS road ON ST_Intersects(crossing.geom, road.geom); -- count 59
--- 1/60 crossing was not conflated due to not intersecting with a road
--- NOTE: has a value of "no" in the access column, and it is a crossing for a the bus lane according to observation via google maps
+	JOIN shane.bvu1_arnold_segments AS road ON ST_Intersects(crossing.geom, road.geom); -- count 55
 
+	
 
 --- check point ---
+	
 -- NOTE: the special crossing case is the only one in this bbox that has 'no' under access column, NULL otherwise
 SELECT * FROM shane.bvu1_conflation_crossing_case
 
@@ -298,7 +286,6 @@ WHERE osm_id NOT IN (
 
 
 
-
 --- connecting link case ---
 
 -- from there we can associate a crossing link to the road the crossing is conflated to
@@ -306,8 +293,8 @@ WHERE osm_id NOT IN (
 
 CREATE TABLE shane.bvu1_conflation_connecting_link_case (
 	osm_label TEXT,
-	osm_sw_id INT8,
-	osm_sw_geom GEOMETRY(LineString, 3857),
+	osm_cl_id INT8,
+	osm_cl_geom GEOMETRY(LineString, 3857),
 	osm_crossing_id INT8,
 	osm_crossing_geom GEOMETRY(LineString, 3857),
 	arnold_road_id INT8,
@@ -316,40 +303,49 @@ CREATE TABLE shane.bvu1_conflation_connecting_link_case (
 );
 
 
-
-INSERT INTO shane.bvu1_conflation_connecting_link_case (osm_label, osm_sw_id, osm_sw_geom, osm_crossing_id, osm_crossing_geom, arnold_road_id, arnold_road_geom, arnold_road_shape)
+INSERT INTO shane.bvu1_conflation_connecting_link_case (osm_label, osm_cl_id, osm_cl_geom, osm_crossing_id, osm_crossing_geom, arnold_road_id, arnold_road_geom, arnold_road_shape)
 SELECT
     'connecting link' AS osm_label,
-    sw.osm_id AS osm_sw_id,
-    sw.geom AS osm_sw_geom,
+    cl.osm_id AS osm_cl_id,
+    cl.geom AS osm_cl_geom,
     crossing.osm_id AS osm_crossing_id,
     crossing.osm_geom AS osm_crossing_geom,
     crossing.arnold_road_id AS arnold_road_id,
     crossing.arnold_road_geom AS arnold_road_geom,
     crossing.arnold_road_shape AS arnold_road_shape
-FROM shane.bvu1_osm_sw AS sw
+FROM shane.bvu1_osm_connecting_links AS cl
 JOIN shane.bvu1_conflation_crossing_case AS crossing
-    ON ST_Intersects(sw.geom, crossing.osm_geom)
-WHERE sw.osm_id NOT IN (
-    SELECT osm_id FROM shane.bvu1_conflation_general_case
-) 
-AND sw.osm_id NOT IN (
-    SELECT osm_id FROM shane.bvu1_conflation_edge_case
-) 
-AND sw.osm_id NOT IN (
-    SELECT osm_sw_id FROM shane.bvu1_conflation_entrance_case
+    ON ST_Intersects(cl.geom, crossing.osm_geom)
+WHERE ST_Length(cl.geom) < 8; -- count: 87
+
+
+DELETE FROM shane.bvu1_conflation_general_case sw
+WHERE sw.osm_id IN (
+	SELECT bs.osm_id
+	FROM shane.bvu1_conflation_general_case bs
+	JOIN shane.bvu1_conflation_connecting_link_case link
+	ON link.osm_cl_id = bs.osm_id 
+);
+
+
+
+--- checkpoint ---
+
+SELECT *
+FROM shane.bvu1_osm_connecting_links
+WHERE osm_id IN (607810499, 607810496, 1074618891);
+
+SELECT * FROM shane.bvu1_osm_connecting_links
+WHERE osm_id NOT IN (
+	SELECT osm_cl_id FROM shane.bvu1_conflation_connecting_link_case
 )
-AND ST_Length(sw.geom) < 8; -- count: 17
 
+SELECT * FROM shane.bvu1_osm_crossing
 
+SELECT * FROM shane.bvu1_arnold_lines 
 
-
-
-
-
-
-
-
+-- connecting link special case: 607,810,499 / 1,074,618,891 / 607,810,496
+-- crossing special case: 67,144,865 / 1,074,618,890
 
 
 
@@ -391,14 +387,17 @@ WHERE sw.geom NOT IN (
 	SELECT osm_geom
 	FROM shane.bvu1_conflation_general_case
 ) AND (
-	general_case1.osm_id <> general_case2.osm_id); -- count: 5
+	general_case1.osm_id != general_case2.osm_id
+) AND (
+	general_case1.arnold_object_id != general_case2.arnold_object_id
+); -- count: 19
 
-   
+  
+
 -- checkpoint --
--- NOTE: the edges that show furthst north are not connected to street on top side because of bbox cut-off
+
 SELECT * FROM shane.bvu1_conflation_edge_case
--- check bbox cut-off  here
-SELECT * FROM shane.osm_sw
+
 -- what do we have left?
 SELECT *
 FROM shane.bvu1_osm_sw
@@ -411,15 +410,14 @@ WHERE osm_id NOT IN (
 
 
 
-
 --- entrance case ---
+
 -- creating table for entrances. this is the case when it is an exception to general case and edge case and we have classified them as entrances from
 -- being smaller than 10 meters, and only intersecting with a general case sidewalk on one side. We also check to see if the sidewalk segment intersects with
 -- a point from osm points that holds a tag with "entrance" 
 -- NOTE: for now this does not conflate with anything because we don't consider these entrances associated to any road, but we make this special case to define
 -- and justify it's reasoning to classify and move on from these "sidewalk" data
 
--- create the table	
 CREATE TABLE shane.bvu1_conflation_entrance_case (
 	osm_label TEXT,
 	osm_sw_id INT8,
@@ -450,7 +448,10 @@ INSERT INTO shane.bvu1_conflation_entrance_case (osm_label, osm_sw_id, osm_sw_ge
 		UNION ALL
 		SELECT osm_id
 		FROM shane.bvu1_conflation_edge_case
-	); -- count: 9
+		UNION ALL
+		SELECT osm_cl_id
+		FROM shane.bvu1_conflation_connecting_link_case
+	); -- count: 1
 
 
 --- checkpoint ---
@@ -465,18 +466,9 @@ WHERE osm_id NOT IN (
     SELECT osm_id FROM shane.bvu1_conflation_edge_case
 ) AND osm_id NOT IN (
 	SELECT osm_sw_id FROM shane.bvu1_conflation_entrance_case
+) AND osm_id NOT IN (
+	SELECT osm_cl_id FROM shane.bvu1_conflation_connecting_link_case
 );
--- what we have left are primarily connecting links and special case sidewalk data
--- first we will conflate crossing to roads
-
-
-
-
-
-
-
---- checkpoint ---
-SELECT * FROM shane.bvu1_conflation_connecting_link_case
 
 -- the remaining special cases, count: 6
 -- the first 3 are due to bounding box cut-off
