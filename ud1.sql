@@ -375,7 +375,7 @@ AND ST_Length(sw.geom) < 8; -- count: 17
 --- checkpoint ---
 SELECT * FROM shane.ud1_conflation_crossing_link_case
 
--- the remaining special cases, count: 6
+-- the remaining special cases, count: 5
 -- the first 3 are due to bounding box cut-off
 SELECT *
 FROM shane.ud1_osm_sw
