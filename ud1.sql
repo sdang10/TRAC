@@ -54,7 +54,6 @@ CREATE TABLE shane.ud1_osm_footway_null AS (
 ---- PROCESS ----
 
 
-
 --- entrance case ---
 
 -- being smaller than 10 meters and intersects with a point from osm points that has a tag of "entrance" 
