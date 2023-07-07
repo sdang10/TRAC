@@ -56,7 +56,7 @@ CREATE TABLE shane.ud1_osm_footway_null AS (
 
 --- entrance case ---
 
--- being smaller than 10 meters and intersects with a point from osm points that has a tag of "entrance" 
+-- defined as entrance if intersects with a point from osm points that has a tag of "entrance" 
 -- NOTE: for now this does not conflate with anything (roads) because we don't consider these entrances associated to any road
 -- we make this special case to define and justify it's reasoning to classify and move on from these "sidewalk" data in the conflation process
 
