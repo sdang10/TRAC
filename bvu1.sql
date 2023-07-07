@@ -49,65 +49,9 @@ CREATE TABLE shane.bvu1_osm_footway_null AS (
 
 
 
+
+
 ---- PROCESS ----
-
-
---- segmented roads ---
--- arnold gave us road geometries which varied in length but for the most part, the roads were very long, so to better
--- associate roads to sidewalks (because one road can have many many sidewalks) we segmented the roads by road intersection
---CREATE TABLE shane.bvu1_arnold_segment_collections AS
---	WITH intersection_points AS (
---		SELECT DISTINCT 
---			road1.object_id AS road1_object_id, 
---			road1.route_id AS road1_route_id, 
---	  		(ST_DumpPoints(ST_Intersection(road1.geom, road2.geom))).geom AS geom
---		FROM shane.bvu1_arnold_lines AS road1
---		JOIN shane.bvu1_arnold_lines AS road2
---			ON ST_Intersects(road1.geom, road2.geom) AND ST_Equals(road1.geom, road2.geom) IS FALSE
---	)
---	SELECT
---	  	bvu1_arnold_lines.og_object_id, 
---		bvu1_arnold_lines.object_id,
---		bvu1_arnold_lines.route_id,
---		bvu1_arnold_lines.begin_measure,
---		bvu1_arnold_lines.end_measure,
---		bvu1_arnold_lines.shape_length,
---		bvu1_arnold_lines.geom,
---		bvu1_arnold_lines.shape,
---		ST_collect(intersection_points.geom),
---		ST_Split(bvu1_arnold_lines.geom, ST_Collect(intersection_points.geom))
---	FROM shane.bvu1_arnold_lines AS bvu1_arnold_lines
---	JOIN intersection_points AS intersection_points 
---		ON bvu1_arnold_lines.object_id = intersection_points.road1_object_id 
---	GROUP BY
---		bvu1_arnold_lines.og_object_id,
---		bvu1_arnold_lines.object_id,
---		bvu1_arnold_lines.route_id,
---		bvu1_arnold_lines.begin_measure,
---	  	bvu1_arnold_lines.end_measure,
---	  	bvu1_arnold_lines.shape_length,
---		bvu1_arnold_lines.geom,
---		bvu1_arnold_lines.shape;
---	
---	
----- this makes a collection of linestrings and does not give us single segment linestrings
----- so, we make this table to dump the collection into individual linestrings for each segment
---CREATE TABLE shane.bvu1_arnold_segments AS
---	SELECT
---		og_object_id,
---		object_id,
---		route_id,
---		begin_measure,
---	  	end_measure,
---	  	shape_length,
---		(ST_Dump(st_split)).geom::geometry(LineString, 3857) AS geom,
---		shape
---	FROM shane.bvu1_arnold_segment_collections;
---
----- checkpoint --
---SELECT * FROM shane.bvu1_arnold_segments
-
-
 
 
 --- entrance case ---
@@ -142,7 +86,6 @@ INSERT INTO shane.bvu1_conflation_entrance_case (osm_label, osm_sw_id, osm_sw_ge
 		WHERE tags -> 'entrance' IS NOT NULL
 	) AS point 
 		ON ST_intersects(sw.geom, point.geom); -- count: 1
-
 
 
 
@@ -181,7 +124,6 @@ FROM shane.bvu1_osm_crossing
 WHERE osm_id NOT IN (
     SELECT osm_id FROM shane.bvu1_conflation_crossing_case
 );
-
 
 
 
