@@ -108,16 +108,23 @@ CREATE TABLE shane.ud1_conflation_crossing_case (
 	arnold_road_shape GEOMETRY(MultilinestringM, 3857)
 );
 
-INSERT INTO shane.ud1_conflation_crossing_case (osm_label, osm_id, osm_geom, arnold_road_id, arnold_road_geom, arnold_road_shape)
-	SELECT 
-		'crossing' AS osm_label,
-		crossing.osm_id AS osm_id, 
-		crossing.geom AS osm_geom,
-		road.og_object_id AS arnold_road_id,
-		road.geom AS arnold_road_geom,
-		road.shape AS arnold_road_shape
-	FROM shane.ud1_osm_crossing AS crossing
-	JOIN shane.ud1_arnold_lines AS road ON ST_Intersects(crossing.geom, road.geom); -- count 59
+INSERT INTO shane.ud1_conflation_crossing_case (
+	osm_label, 
+	osm_id, 
+	osm_geom, 
+	arnold_road_id, 
+	arnold_road_geom, 
+	arnold_road_shape
+)
+SELECT 
+	'crossing' AS osm_label,
+	crossing.osm_id AS osm_id, 
+	crossing.geom AS osm_geom,
+	road.og_object_id AS arnold_road_id,
+	road.geom AS arnold_road_geom,
+	road.shape AS arnold_road_shape
+FROM shane.ud1_osm_crossing AS crossing
+JOIN shane.ud1_arnold_lines AS road ON ST_Intersects(crossing.geom, road.geom); -- count 59
 
 
 	
@@ -176,7 +183,6 @@ WHERE osm_id NOT IN (
 
 -- from there we can associate a crossing link to the road the crossing is conflated to
 -- NOTE: we don't associate connecting link to sidewalk road bc a connecting link is can be connected to more than 1 sidewalk
-
 CREATE TABLE shane.ud1_conflation_connecting_link_case (
 	osm_label TEXT,
 	osm_cl_id INT8,
@@ -200,19 +206,18 @@ INSERT INTO shane.ud1_conflation_connecting_link_case (
 	arnold_road_id, 
 	arnold_road_geom, 
 	arnold_road_shape
-)
-	SELECT
-		'connecting link' AS osm_label,
-	    cl.osm_id AS osm_cl_id,
-	    cl.geom AS osm_cl_geom,
-	    crossing.osm_id AS osm_crossing_id,
-	    crossing.osm_geom AS osm_crossing_geom,
-	    crossing.arnold_road_id AS arnold_road_id,
-	    crossing.arnold_road_geom AS arnold_road_geom,
-	    crossing.arnold_road_shape AS arnold_road_shape
-	FROM shane.ud1_osm_connecting_links AS cl
-	JOIN shane.ud1_conflation_crossing_case AS crossing
-	    ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 17
+) SELECT
+	'connecting link' AS osm_label,
+	cl.osm_id AS osm_cl_id,
+	cl.geom AS osm_cl_geom,
+	crossing.osm_id AS osm_crossing_id,
+	crossing.osm_geom AS osm_crossing_geom,
+	crossing.arnold_road_id AS arnold_road_id,
+	crossing.arnold_road_geom AS arnold_road_geom,
+	crossing.arnold_road_shape AS arnold_road_shape
+FROM shane.ud1_osm_connecting_links AS cl
+JOIN shane.ud1_conflation_crossing_case AS crossing
+	ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 17
 
 -- conflates connecting links found as null values in sidewalk and footway tags
 INSERT INTO shane.ud1_conflation_connecting_link_case (
@@ -224,19 +229,18 @@ INSERT INTO shane.ud1_conflation_connecting_link_case (
 	arnold_road_id, 
 	arnold_road_geom, 
 	arnold_road_shape
-)
-	SELECT
-	    'connecting link' AS osm_label,
-	    cl.osm_id AS osm_cl_id,
-	    cl.geom AS osm_cl_geom,
-	    crossing.osm_id AS osm_crossing_id,
-	    crossing.osm_geom AS osm_crossing_geom,
-	    crossing.arnold_road_id AS arnold_road_id,
-	    crossing.arnold_road_geom AS arnold_road_geom,
-	    crossing.arnold_road_shape AS arnold_road_shape
-	FROM shane.ud1_osm_footway_null_connecting_links AS cl
-	JOIN shane.ud1_conflation_crossing_case AS crossing
-	    ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 68
+) SELECT
+	'connecting link' AS osm_label,
+	cl.osm_id AS osm_cl_id,
+	cl.geom AS osm_cl_geom,
+	crossing.osm_id AS osm_crossing_id,
+	crossing.osm_geom AS osm_crossing_geom,
+	crossing.arnold_road_id AS arnold_road_id,
+	crossing.arnold_road_geom AS arnold_road_geom,
+	crossing.arnold_road_shape AS arnold_road_shape
+FROM shane.ud1_osm_footway_null_connecting_links AS cl
+JOIN shane.ud1_conflation_crossing_case AS crossing
+	ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 68
 
     
 -- checkpoint --
