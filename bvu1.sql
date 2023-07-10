@@ -415,7 +415,6 @@ WHERE osm_id NOT IN (
 );
 
 
-
 -- FINAL checks --
 
 -- remaining special cases
@@ -430,6 +429,7 @@ WHERE osm_id NOT IN (
 ) AND osm_id NOT IN (
 	SELECT osm_cl_id FROM shane.bvu1_conflation_connecting_link_case
 ); -- count: 51
+
 
 -- which roads weren't used, if any
 SELECT *
