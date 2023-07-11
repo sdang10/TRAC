@@ -32,7 +32,7 @@ CREATE TABLE shane_bvu1_roads.arnold_lines AS (
 
 -- create lane number column
 CREATE TABLE shane_bvu1_roads.osm_roads_add_lanes AS (
-	SELECT osm_id, name, CAST(tags -> 'lanes' AS int) lanes, geom
+	SELECT osm_id, name AS osm_road_name, CAST(tags -> 'lanes' AS int) lanes, geom
 	FROM shane_bvu1_roads.osm_roads
 	WHERE tags ? 'lanes' 
 ); -- count: 118
@@ -44,7 +44,7 @@ CREATE TABLE shane_bvu1_roads.osm_roads_add_lanes AS (
 -- inherit the lanes info from the existing shane_bvu1_roads._osm_roads_add_lanes table 
 
 -- WHILE LOOP TO RUN MORE THAN ONCE, CURRENTLY COUNT = 2
-INSERT INTO shane_bvu1_roads.osm_roads_add_lanes(osm_id, name, lanes, geom)
+INSERT INTO shane_bvu1_roads.osm_roads_add_lanes(osm_id, osm_road_name, lanes, geom)
 WITH ranked_road AS (
 	SELECT 
 		r2.osm_id AS osm_id, 
@@ -92,7 +92,7 @@ WITH ranked_roads AS (
 	arnold.og_object_id AS arnold_object_id, 
 	arnold.shape AS arnold_shape, 
 	osm.osm_id AS osm_id, 
-	osm.name AS osm_road_name,  
+	osm.osm_road_name AS osm_road_name,  
 	osm.geom AS osm_geom,
 	ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
 		ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom,
@@ -132,30 +132,18 @@ FROM ranked_roads
 WHERE rank = 1; -- count: 118
 
 
-
-
-
-
-
-		 
-
-
-
-
-
-
-
-
-INSERT INTO shane_bvu1_roads.conflation_road_case(osm_id, osm_road_name, osm_geom, arnold_object_id, arnold_geom)
-SELECT DISTINCT 
-	road_case.object_id, 
-	road_case.arnold_object_id, 
-	lanes.osm_id, 
-	lanes.name,
-	lanes.geom
+-- 
+INSERT INTO shane_bvu1_roads.conflation_road_case(osm_id, osm_road_name, osm_geom, arnold_object_id, arnold_geom, arnold_shape)
+SELECT DISTINCT ON (lanes.osm_id, road_case.arnold_object_id)
+	lanes.osm_id AS osm_id, 
+	lanes.osm_road_name AS osm_road_name,
+	lanes.geom AS osm_geom,
+	road_case.arnold_object_id AS arnold_object_id,
+	road_case.arnold_geom AS arnold_geom,
+	road_case.arnold_shape AS arnold_shape
 FROM shane_bvu1_roads.osm_roads_add_lanes lanes
 JOIN shane_bvu1_roads.conflation_road_case road_case
-	ON lanes.name = road_case.osm_road_name 
+	ON lanes.osm_road_name = road_case.osm_road_name 
 AND ( ST_Intersects(st_startpoint(lanes.geom), st_startpoint(road_case.osm_geom))
 	OR ST_Intersects(st_startpoint(lanes.geom), st_endpoint(road_case.osm_geom))
 	OR ST_Intersects(st_endpoint(lanes.geom), st_startpoint(road_case.osm_geom))
@@ -163,14 +151,11 @@ AND ( ST_Intersects(st_startpoint(lanes.geom), st_startpoint(road_case.osm_geom)
 )
 WHERE lanes.osm_id NOT IN (
 	SELECT osm_id
-	FROM shane_bvu1_roads._conflation_road_case
-)	
-GROUP BY road_case.objectid, road_case.og_objectid, lanes.osm_id, lanes.name, lanes.highway, lanes.geom
+	FROM shane_bvu1_roads.conflation_road_case
+)
 
 	
+-- check point -- 
+SELECT * FROM shane_bvu1_roads.conflation_road_case
 
-
-
-CREATE TABLE <schema>.road_case_conflated AS
-	SELECT objectid, og_objectid, osm_id, osm_geom FROM shane_bvu1_roads._conflation_road_case
-
+	
