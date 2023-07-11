@@ -114,7 +114,7 @@ INSERT INTO shane.bvu1_conflation_crossing_case (
 	arnold_road_id, 
 	arnold_road_geom, 
 	arnold_road_shape
-) SELECT 
+) SELECT DISTINCT ON (crossing.osm_id, road.og_object_id)
 	'crossing' AS osm_label,
 	crossing.osm_id AS osm_id, 
 	crossing.geom AS osm_geom,
@@ -202,7 +202,7 @@ INSERT INTO shane.bvu1_conflation_connecting_link_case (
 	arnold_road_id, 
 	arnold_road_geom, 
 	arnold_road_shape
-) SELECT
+) SELECT DISTINCT ON (cl.osm_id, crossing.arnold_road_id)
     'connecting link' AS osm_label,
     cl.osm_id AS osm_cl_id,
     cl.geom AS osm_cl_geom,
