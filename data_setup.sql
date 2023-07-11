@@ -10,32 +10,32 @@
 
 -- we need to change 'way' to 'geom' column name
 
-CREATE TABLE shane.osm_lines AS (
+CREATE TABLE shane_data_setup.osm_lines AS (
 	SELECT * 
 	FROM public.planet_osm_line
 )
-ALTER TABLE shane.osm_lines RENAME COLUMN way TO geom;
+ALTER TABLE shane_data_setup.osm_lines RENAME COLUMN way TO geom;
 
 
-CREATE TABLE shane.osm_points AS (
+CREATE TABLE shane_data_setup.osm_points AS (
 	SELECT * 
 	FROM public.planet_osm_point
 )
-ALTER TABLE shane.osm_points RENAME COLUMN way TO geom;
+ALTER TABLE shane_data_setup.osm_points RENAME COLUMN way TO geom;
 
 
-CREATE TABLE shane.osm_polygons AS (
+CREATE TABLE shane_data_setup.osm_polygons AS (
 	SELECT * 
 	FROM public.planet_osm_polygon
 )
-ALTER TABLE shane.osm_polygons RENAME COLUMN way TO geom;
+ALTER TABLE shane_data_setup.osm_polygons RENAME COLUMN way TO geom;
 
 
-CREATE TABLE shane.osm_roads AS (
+CREATE TABLE shane_data_setup.osm_roads AS (
 	SELECT * 
 	FROM public.planet_osm_roads
 )
-ALTER TABLE shane.osm_roads RENAME COLUMN way TO geom;
+ALTER TABLE shane_data_setup.osm_roads RENAME COLUMN way TO geom;
 
 
 --- ARNOLD ---
@@ -44,7 +44,7 @@ ALTER TABLE shane.osm_roads RENAME COLUMN way TO geom;
 -- we need to change multilinestring into linestring
 -- put spacers between words like objectid, beginmeasure -> object_id, begin_measure  etc.
 
-CREATE TABLE shane.arnold_lines (
+CREATE TABLE shane_data_setup.arnold_lines (
   	og_object_id INT8,
   	object_id SERIAL,
   	route_id VARCHAR(75),
@@ -55,7 +55,7 @@ CREATE TABLE shane.arnold_lines (
   	shape geometry(multilinestringm, 3857)
 );
 
-INSERT INTO shane.arnold_lines (og_object_id, route_id, begin_measure, end_measure, shape_length, geom, shape)
+INSERT INTO shane_data_setup.arnold_lines (og_object_id, route_id, begin_measure, end_measure, shape_length, geom, shape)
 	SELECT  
 		objectid, 
 		routeid, 
