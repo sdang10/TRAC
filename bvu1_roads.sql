@@ -7,7 +7,10 @@ CREATE TABLE shane.bvu1_osm_roads AS (
 	WHERE highway IN ('motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'road', 'busway', 'unclassified') 
 		AND geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857) );
 
--- check for roads that were unintentionally left out
+	
+
+-- checkpoint --
+	-- for roads that were unintentionally left out
 	-- NOTE: later we might want to include 'residential' AND 'service' roads as they are still roads, but they just don't conflate to 
 	-- datasets (arnold) for now as they are not main roads
 SELECT * 
@@ -18,22 +21,16 @@ WHERE osm_id NOT IN (
 ) AND geom && st_setsrid( st_makebox2d( st_makepoint(-13603442,6043723), st_makepoint(-13602226,6044848)), 3857)
 AND highway != 'footway';
 		
-		
-		
-		
 
 
-
-
-
-
--- In this table, we want to pull out the number of lanes
+-- create lane number column
 CREATE TABLE shane.bvu1_osm_roads_add_lanes AS (
 	SELECT osm_id, name, CAST(tags -> 'lanes' AS int) lanes, geom
 	FROM shane.bvu1_osm_roads
 	WHERE tags ? 'lanes' );
-    
-    
+
+
+
 -- For those that do not have the lanes, if the road seg (with no lanes info) has the end/start point
 -- intersecting with another end/start point of the road seg (with lanes info), and they are parallel to each other,
 -- inherit the lanes info from the existing shane.bvu1_osm_roads_add_lanes table 
@@ -42,10 +39,10 @@ CREATE TABLE shane.bvu1_osm_roads_add_lanes AS (
 INSERT INTO shane.bvu1_osm_roads_add_lanes(osm_id, name, lanes, geom)
 WITH ranked_road AS (
 	SELECT 
-		r2.osm_id, 
-		r2.name, 
-		r1.lanes, 
-		r2.geom,
+		r2.osm_id AS osm_id, 
+		r2.name AS osm_road_name, 
+		r1.lanes AS lanes, 
+		r2.geom AS osm_geom,
 		ROW_NUMBER() OVER (
 			PARTITION BY r2.osm_id
 		   	ORDER BY r1.lanes DESC
@@ -68,21 +65,15 @@ WITH ranked_road AS (
 		SELECT osm_id FROM shane.bvu1_osm_roads_add_lanes
 	)		    
 )	    
-SELECT osm_id, name, lanes, geom
+SELECT 
+	osm_id, 
+	osm_road_name, 
+	lanes, 
+	osm_geom
 FROM ranked_road
 WHERE RANK = 1
 
 
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
 	
 	
 -- this is the table we are checking if the osm road are the same as the arnold road
@@ -90,11 +81,10 @@ WHERE RANK = 1
 CREATE TABLE shane.bvu1_conflation_road_case AS 
 WITH ranked_roads AS (
 	SELECT 
-	arnold.object_id, 
-	arnold.og_object_id, 
-	arnold.geom, 
-	osm.osm_id, 
-	osm.name,  
+	arnold.og_object_id AS arnold_object_id, 
+	arnold.shape AS arnold_shape, 
+	osm.osm_id AS osm_id, 
+	osm.name AS osm_road_name,  
 	osm.geom AS osm_geom,
 	ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
 		ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom,
@@ -107,8 +97,8 @@ WITH ranked_roads AS (
 		  	GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom,
 		  	ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom )
 	) AS RANK
-	FROM shane.bvu1_osm_roads_add_lanes osm
-	RIGHT JOIN jolie_bel1.arnold_roads arnold
+	FROM shane.bvu1_osm_roads_add_lanes AS osm
+	RIGHT JOIN shane.bvu1_arnold_lines AS arnold
 	ON ST_Intersects(ST_buffer(osm.geom, (osm.lanes+1)*4), arnold.geom)
 	WHERE (  ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, 
 		ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))),
@@ -124,12 +114,12 @@ WITH ranked_roads AS (
 		ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 345 AND 360 ) -- 360
 )
 SELECT
-	objectid,
-	og_objectid,
 	osm_id,
-	name,
-	highway,
-	osm_geom
+	osm_road_name,
+	osm_geom,
+	arnold_object_id,
+	seg_geom AS arnold_geom,
+	arnold_shape
 FROM ranked_roads
 WHERE rank = 1;
 
@@ -140,23 +130,37 @@ WHERE rank = 1;
 
 
 		 
-INSERT INTO shane.bvu1_conflation_road_case(objectid, og_objectid, osm_id, name, highway, osm_geom)
-	SELECT DISTINCT arnold_osm.objectid, arnold_osm.og_objectid, lanes.osm_id, lanes.name, lanes.highway, lanes.geom
-	FROM shane.bvu1_osm_roads_add_lanes lanes
-	JOIN shane.bvu1_conflation_road_case arnold_osm
-	ON lanes.name = arnold_osm.name AND 
-		(
-			ST_Intersects(st_startpoint(lanes.geom), st_startpoint(arnold_osm.osm_geom))
-			OR ST_Intersects(st_startpoint(lanes.geom), st_endpoint(arnold_osm.osm_geom))
-			OR ST_Intersects(st_endpoint(lanes.geom), st_startpoint(arnold_osm.osm_geom))
-			OR ST_Intersects(st_endpoint(lanes.geom), st_endpoint(arnold_osm.osm_geom))
-		)
-	WHERE lanes.osm_id NOT IN (
-			SELECT osm_id
-			FROM shane.bvu1_conflation_road_case
-		)	
-	GROUP BY arnold_osm.objectid, arnold_osm.og_objectid, lanes.osm_id, lanes.name, lanes.highway, lanes.geom
+INSERT INTO shane.bvu1_conflation_road_case(osm_id, osm_road_name, osm_geom, arnold_object_id, arnold_geom)
+SELECT DISTINCT 
+	arnold_osm.objectid, 
+	arnold_osm.og_objectid, 
+	lanes.osm_id, 
+	lanes.name,
+	lanes.geom
+FROM shane.bvu1_osm_roads_add_lanes lanes
+JOIN shane.bvu1_conflation_road_case arnold_osm
+	ON lanes.name = arnold_osm.name 
+AND ( ST_Intersects(st_startpoint(lanes.geom), st_startpoint(arnold_osm.osm_geom))
+	OR ST_Intersects(st_startpoint(lanes.geom), st_endpoint(arnold_osm.osm_geom))
+	OR ST_Intersects(st_endpoint(lanes.geom), st_startpoint(arnold_osm.osm_geom))
+	OR ST_Intersects(st_endpoint(lanes.geom), st_endpoint(arnold_osm.osm_geom))
+)
+WHERE lanes.osm_id NOT IN (
+	SELECT osm_id
+	FROM shane.bvu1_conflation_road_case
+)	
+GROUP BY arnold_osm.objectid, arnold_osm.og_objectid, lanes.osm_id, lanes.name, lanes.highway, lanes.geom
 
 	
+
+
+
+
+
+
+
+
 CREATE TABLE <schema>.arnold_osm_conflated AS
 	SELECT objectid, og_objectid, osm_id, osm_geom FROM shane.bvu1_conflation_road_case
+
+
