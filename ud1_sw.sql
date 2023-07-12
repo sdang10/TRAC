@@ -103,26 +103,23 @@ CREATE TABLE shane_ud1_sw.conflation_crossing_case (
 	osm_label TEXT,
 	osm_id INT8,
 	osm_geom GEOMETRY(LineString, 3857),
-	arnold_road_id INT8,
-	arnold_road_geom GEOMETRY(LineString, 3857),
-	arnold_road_shape GEOMETRY(MultilinestringM, 3857)
+	arnold_route_id VARCHAR(75),
+	arnold_road_geom GEOMETRY(LineString, 3857)
 );
 
 INSERT INTO shane_ud1_sw.conflation_crossing_case (
 	osm_label, 
 	osm_id, 
 	osm_geom, 
-	arnold_road_id, 
-	arnold_road_geom, 
-	arnold_road_shape
+	arnold_route_id, 
+	arnold_road_geom
 )
 SELECT 
 	'crossing' AS osm_label,
 	crossing.osm_id AS osm_id, 
 	crossing.geom AS osm_geom,
-	road.og_object_id AS arnold_road_id,
-	road.geom AS arnold_road_geom,
-	road.shape AS arnold_road_shape
+	road.route_id AS arnold_route_id,
+	road.geom AS arnold_road_geom
 FROM shane_ud1_sw.osm_crossing AS crossing
 JOIN shane_ud1_sw.arnold_lines AS road ON ST_Intersects(crossing.geom, road.geom); -- count 59
 
@@ -189,9 +186,8 @@ CREATE TABLE shane_ud1_sw.conflation_connecting_link_case (
 	osm_cl_geom GEOMETRY(LineString, 3857),
 	osm_crossing_id INT8,
 	osm_crossing_geom GEOMETRY(LineString, 3857),
-	arnold_road_id INT8,
-	arnold_road_geom GEOMETRY(LineString, 3857),
-	arnold_road_shape GEOMETRY(MultilinestringM, 3857)
+	arnold_route_id VARCHAR(75),
+	arnold_road_geom GEOMETRY(LineString, 3857)
 );
 
 -- conflates connecting links to roads by its crossing inflation. Meaning, whatever road is conflated to the crossing a connecting link is connected to,
@@ -203,18 +199,16 @@ INSERT INTO shane_ud1_sw.conflation_connecting_link_case (
 	osm_cl_geom, 
 	osm_crossing_id, 
 	osm_crossing_geom, 
-	arnold_road_id, 
-	arnold_road_geom, 
-	arnold_road_shape
+	arnold_route_id, 
+	arnold_road_geom
 ) SELECT
 	'connecting link' AS osm_label,
 	cl.osm_id AS osm_cl_id,
 	cl.geom AS osm_cl_geom,
 	crossing.osm_id AS osm_crossing_id,
 	crossing.osm_geom AS osm_crossing_geom,
-	crossing.arnold_road_id AS arnold_road_id,
-	crossing.arnold_road_geom AS arnold_road_geom,
-	crossing.arnold_road_shape AS arnold_road_shape
+	crossing.arnold_route_id AS arnold_route_id,
+	crossing.arnold_road_geom AS arnold_road_geom
 FROM shane_ud1_sw.osm_connecting_links AS cl
 JOIN shane_ud1_sw.conflation_crossing_case AS crossing
 	ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 17
@@ -226,18 +220,16 @@ INSERT INTO shane_ud1_sw.conflation_connecting_link_case (
 	osm_cl_geom, 
 	osm_crossing_id, 
 	osm_crossing_geom, 
-	arnold_road_id, 
-	arnold_road_geom, 
-	arnold_road_shape
+	arnold_route_id, 
+	arnold_road_geom
 ) SELECT
 	'connecting link' AS osm_label,
 	cl.osm_id AS osm_cl_id,
 	cl.geom AS osm_cl_geom,
 	crossing.osm_id AS osm_crossing_id,
 	crossing.osm_geom AS osm_crossing_geom,
-	crossing.arnold_road_id AS arnold_road_id,
-	crossing.arnold_road_geom AS arnold_road_geom,
-	crossing.arnold_road_shape AS arnold_road_shape
+	crossing.arnold_route_id AS arnold_route_id,
+	crossing.arnold_road_geom AS arnold_road_geom
 FROM shane_ud1_sw.osm_footway_null_connecting_links AS cl
 JOIN shane_ud1_sw.conflation_crossing_case AS crossing
 	ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 68
@@ -271,9 +263,8 @@ WITH ranked_roads AS (
 	SELECT
 		sw.osm_id AS osm_id,
 		sw.geom AS osm_geom,
-		road.og_object_id AS arnold_object_id,
+		road.route_id AS arnold_route_id,
 		road.geom AS arnold_geom,
-		road.shape AS arnold_shape,
 		-- finds the closest points on the road linestring to the start and end point of the sw geom and extracts the corresponding 
 		-- subseciton of the road as its own distinct linestring. 
 	  	ST_LineSubstring( road.geom, LEAST( ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_startpoint(sw.geom), road.geom)), 
@@ -317,9 +308,8 @@ WITH ranked_roads AS (
 	'sidewalk' AS osm_label,
   	osm_id,
   	osm_geom,
-  	arnold_object_id,
-  	seg_geom AS arnold_geom,
-  	arnold_shape
+  	arnold_route_id,
+  	seg_geom AS arnold_geom
 FROM  ranked_roads
 WHERE rank = 1
 AND osm_id NOT IN(
@@ -354,12 +344,10 @@ CREATE TABLE shane_ud1_sw.conflation_edge_case (
 	osm_label TEXT,
     osm_id INT8,
     osm_geom GEOMETRY(LineString, 3857),
-    arnold_road1_id INT8,
+    arnold_road1_route_id VARCHAR(75),
     arnold_road1_geom GEOMETRY(LineString, 3857),
-    arnold_road1_shape GEOMETRY(MultilinestringM, 3857),
-    arnold_road2_id INT8,
-    arnold_road2_geom GEOMETRY(LineString, 3857),
-    arnold_road2_shape GEOMETRY(MultilinestringM, 3857)
+    arnold_road2_route_id VARCHAR(75),
+    arnold_road2_geom GEOMETRY(LineString, 3857)
 );
 
 -- checks the sidewalks at the start and endpoint of the edge. If these two sidewalks are different and have different roads conflated to them,
@@ -368,22 +356,18 @@ INSERT INTO shane_ud1_sw.conflation_edge_case (
 	osm_label, 
 	osm_id, 
 	osm_geom, 
-	arnold_road1_id, 
+	arnold_road1_route_id, 
 	arnold_road1_geom, 
-	arnold_road1_shape, 
-	arnold_road2_id, 
-	arnold_road2_geom, 
-	arnold_road2_shape
+	arnold_road2_route_id, 
+	arnold_road2_geom
 ) SELECT
 	'edge'AS osm_label,
 	sw.osm_id AS osm_id,
 	sw.geom AS osm_geom,
-	general_case1.arnold_object_id AS arnold_road1_id,
+	general_case1.arnold_route_id AS arnold_road1_route_id,
 	general_case1.arnold_geom AS arnold_road1_geom,
-	general_case1.arnold_shape AS arnold_road1_shape, 
-	general_case2.arnold_object_id AS arnold_road2_id,
-	general_case2.arnold_geom AS arnold_road2_geom,
-	general_case2.arnold_shape AS arnold_road2_shape
+	general_case2.arnold_route_id AS arnold_road2_route_id,
+	general_case2.arnold_geom AS arnold_road2_geom
 FROM shane_ud1_sw.osm_sw AS sw
 JOIN shane_ud1_sw.conflation_general_case AS general_case1
 	ON ST_Intersects(ST_StartPoint(sw.geom), general_case1.osm_geom)
@@ -395,7 +379,7 @@ WHERE sw.geom NOT IN (
 ) AND (
 	general_case1.osm_id != general_case2.osm_id
 ) AND (
-	general_case1.arnold_object_id != general_case2.arnold_object_id
+	general_case1.arnold_route_id != general_case2.arnold_route_id
 ); -- count: 5
 
   
@@ -445,4 +429,3 @@ WHERE shape NOT IN (
 ) AND shape NOT IN (
 	SELECT arnold_road_shape FROM shane_ud1_sw.conflation_connecting_link_case
 ); --  count: 10
-
