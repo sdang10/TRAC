@@ -445,3 +445,4 @@ WHERE shape NOT IN (
 ) AND shape NOT IN (
 	SELECT arnold_road_shape FROM shane_ud1_sw.conflation_connecting_link_case
 ); --  count: 10
+
