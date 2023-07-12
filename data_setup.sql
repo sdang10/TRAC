@@ -45,8 +45,7 @@ ALTER TABLE shane_data_setup.osm_roads RENAME COLUMN way TO geom;
 -- put spacers between words like objectid, beginmeasure -> object_id, begin_measure  etc.
 
 CREATE TABLE shane_data_setup.arnold_lines (
-  	og_object_id INT8,
-  	object_id SERIAL,
+  	object_id SERIAL4,
   	route_id VARCHAR(75),
   	begin_measure FLOAT8,
   	end_measure FLOAT8,
@@ -55,9 +54,8 @@ CREATE TABLE shane_data_setup.arnold_lines (
   	shape geometry(multilinestringm, 3857)
 );
 
-INSERT INTO shane_data_setup.arnold_lines (og_object_id, route_id, begin_measure, end_measure, shape_length, geom, shape)
-	SELECT  
-		objectid, 
+INSERT INTO shane_data_setup.arnold_lines (route_id, begin_measure, end_measure, shape_length, geom, shape)
+	SELECT 
 		routeid, 
 		beginmeasure, 
 		endmeasure, 
