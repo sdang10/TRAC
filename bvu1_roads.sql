@@ -22,6 +22,7 @@ WHERE osm_id NOT IN (
 AND highway != 'footway';
 		
 
+
 CREATE TABLE shane_bvu1_roads.arnold_lines AS (
 	SELECT *
  	FROM shane_data_setup.arnold_lines
@@ -67,7 +68,7 @@ WITH ranked_road AS (
 	WHERE r1.osm_id != r2.osm_id
 	AND ( -- osm road should be PARALLEL TO the roads that ARE IN the 
 		ABS(DEGREES(ST_Angle(r1.geom, r2.geom))) BETWEEN 0 AND 10 -- 0 
-		OR ABS(DEGREES(ST_Angle(r1.geom, r2.geom))) BETWEEN 170 AND 190 -- 180
+		OR ABS(DEGREES(ST_Angle(r1.geom, r2.geom))) BETWEEN 170 AND 190 -- 180 
 		OR ABS(DEGREES(ST_Angle(r1.geom, r2.geom))) BETWEEN 350 AND 360  ) -- 360 
 	AND r2.osm_id NOT IN(
 		SELECT osm_id FROM shane_bvu1_roads.osm_roads_add_lanes
@@ -89,8 +90,7 @@ WHERE RANK = 1; -- count: 3 (when run twice)
 CREATE TABLE shane_bvu1_roads.conflation_road_case AS 
 WITH ranked_roads AS (
 	SELECT 
-	arnold.og_object_id AS arnold_object_id, 
-	arnold.shape AS arnold_shape, 
+	arnold.route_id AS arnold_route_id, 
 	osm.osm_id AS osm_id, 
 	osm.osm_road_name AS osm_road_name,  
 	osm.geom AS osm_geom,
@@ -125,22 +125,21 @@ SELECT
 	osm_id,
 	osm_road_name,
 	osm_geom,
-	arnold_object_id,
-	seg_geom AS arnold_geom,
-	arnold_shape
+	arnold_route_id,
+	seg_geom AS arnold_geom
 FROM ranked_roads
 WHERE rank = 1; -- count: 118
 
 
--- 
-INSERT INTO shane_bvu1_roads.conflation_road_case(osm_id, osm_road_name, osm_geom, arnold_object_id, arnold_geom, arnold_shape)
-SELECT DISTINCT ON (lanes.osm_id, road_case.arnold_object_id)
+-- if a osm road that has defined lanes interesects with a conflated osm road and they share the same name, the non-conflated road 
+-- gets conflated inheriting the conflation of the conflated road
+INSERT INTO shane_bvu1_roads.conflation_road_case(osm_id, osm_road_name, osm_geom, arnold_route_id, arnold_geom)
+SELECT DISTINCT ON (lanes.osm_id, road_case.arnold_route_id)
 	lanes.osm_id AS osm_id, 
 	lanes.osm_road_name AS osm_road_name,
 	lanes.geom AS osm_geom,
-	road_case.arnold_object_id AS arnold_object_id,
-	road_case.arnold_geom AS arnold_geom,
-	road_case.arnold_shape AS arnold_shape
+	road_case.arnold_route_id AS arnold_route_id,
+	road_case.arnold_geom AS arnold_geom
 FROM shane_bvu1_roads.osm_roads_add_lanes lanes
 JOIN shane_bvu1_roads.conflation_road_case road_case
 	ON lanes.osm_road_name = road_case.osm_road_name 
@@ -152,10 +151,9 @@ AND ( ST_Intersects(st_startpoint(lanes.geom), st_startpoint(road_case.osm_geom)
 WHERE lanes.osm_id NOT IN (
 	SELECT osm_id
 	FROM shane_bvu1_roads.conflation_road_case
-)
+); -- count: 3
 
 	
 -- check point -- 
-SELECT * FROM shane_bvu1_roads.conflation_road_case
-
+SELECT * FROM shane_bvu1_roads.conflation_road_case -- count: 121
 	
