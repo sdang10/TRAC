@@ -336,11 +336,11 @@ WHERE osm_id NOT IN (
 
 
 
---- edge case --- 
+--- corner case --- 
 
--- an edge is where a sidewalk segment connects 2 sidewalks that meet at a corner without connecting. Edges typically have the following characteristic:
+-- an corner is where a sidewalk segment connects 2 sidewalks that meet at a corner without connecting. Corners typically have the following characteristic:
 	-- 1: on a corner/ intersection - connected to 2 sidewalks associated to 2 different roads
-CREATE TABLE shane_ud1_sw.conflation_edge_case (
+CREATE TABLE shane_ud1_sw.conflation_corner_case (
 	osm_label TEXT,
     osm_id INT8,
     osm_geom GEOMETRY(LineString, 3857),
@@ -350,9 +350,9 @@ CREATE TABLE shane_ud1_sw.conflation_edge_case (
     arnold_road2_geom GEOMETRY(LineString, 3857)
 );
 
--- checks the sidewalks at the start and endpoint of the edge. If these two sidewalks are different and have different roads conflated to them,
--- the edge is defined and inherits those conflated roads as well
-INSERT INTO shane_ud1_sw.conflation_edge_case (
+-- checks the sidewalks at the start and endpoint of the corner. If these two sidewalks are different and have different roads conflated to them,
+-- the corner is defined and inherits those conflated roads as well
+INSERT INTO shane_ud1_sw.conflation_corner_case (
 	osm_label, 
 	osm_id, 
 	osm_geom, 
@@ -361,7 +361,7 @@ INSERT INTO shane_ud1_sw.conflation_edge_case (
 	arnold_road2_route_id, 
 	arnold_road2_geom
 ) SELECT
-	'edge'AS osm_label,
+	'corner'AS osm_label,
 	sw.osm_id AS osm_id,
 	sw.geom AS osm_geom,
 	general_case1.arnold_route_id AS arnold_road1_route_id,
@@ -386,7 +386,7 @@ WHERE sw.geom NOT IN (
 
 -- checkpoint --
 	-- what's in?
-SELECT * FROM shane_ud1_sw.conflation_edge_case
+SELECT * FROM shane_ud1_sw.conflation_corner_case
 	-- what's not in?
 SELECT * 
 FROM shane_ud1_sw.osm_sw
@@ -397,7 +397,7 @@ WHERE osm_id NOT IN (
 ) AND osm_id NOT IN (
 	SELECT osm_id FROM shane_ud1_sw.conflation_general_case
 ) AND osm_id NOT IN (
-	SELECT osm_id FROM shane_ud1_sw.conflation_edge_case
+	SELECT osm_id FROM shane_ud1_sw.conflation_corner_case
 );
 
 
@@ -409,13 +409,13 @@ FROM shane_ud1_sw.osm_sw
 WHERE osm_id NOT IN (
     SELECT osm_id FROM shane_ud1_sw.conflation_general_case
 ) AND osm_id NOT IN (
-    SELECT osm_id FROM shane_ud1_sw.conflation_edge_case
+    SELECT osm_id FROM shane_ud1_sw.conflation_corner_case
 ) AND osm_id NOT IN (
 	SELECT osm_sw_id FROM shane_ud1_sw.conflation_entrance_case
 ) AND osm_id NOT IN (
 	SELECT osm_cl_id FROM shane_ud1_sw.conflation_connecting_link_case
 ); -- count: 8
-	-- 3 edge cases are bbox cutoff, and 3 are entrances of some kind
+	-- 3 corner cases are bbox cutoff, and 3 are entrances of some kind
 
 -- which roads weren't used, if any
 SELECT *
@@ -423,9 +423,9 @@ FROM shane_ud1_sw.arnold_lines
 WHERE shape NOT IN (
     SELECT arnold_shape FROM shane_ud1_sw.conflation_general_case
 ) AND shape NOT IN (
-    SELECT arnold_road1_shape FROM shane_ud1_sw.conflation_edge_case
+    SELECT arnold_road1_shape FROM shane_ud1_sw.conflation_corner_case
 ) AND shape NOT IN (
-	SELECT arnold_road2_shape FROM shane_ud1_sw.conflation_edge_case
+	SELECT arnold_road2_shape FROM shane_ud1_sw.conflation_corner_case
 ) AND shape NOT IN (
 	SELECT arnold_road_shape FROM shane_ud1_sw.conflation_connecting_link_case
 ); --  count: 10
