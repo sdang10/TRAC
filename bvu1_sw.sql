@@ -92,7 +92,7 @@ JOIN (
 	ON ST_intersects(sw.geom, point.geom); -- count: 1
 
 
-
+SELECT * FROM shane_bvu1_sw.conflation_crossing_case
     
 --- crossing case ---
 
@@ -102,25 +102,22 @@ CREATE TABLE shane_bvu1_sw.conflation_crossing_case (
 	osm_label TEXT,
 	osm_id INT8,
 	osm_geom GEOMETRY(LineString, 3857),
-	arnold_road_id INT8,
-	arnold_road_geom GEOMETRY(LineString, 3857),
-	arnold_road_shape GEOMETRY(MultilinestringM, 3857)
+	arnold_route_id VARCHAR(75),
+	arnold_road_geom GEOMETRY(LineString, 3857)
 );
 
 INSERT INTO shane_bvu1_sw.conflation_crossing_case (
 	osm_label, 
 	osm_id, 
 	osm_geom, 
-	arnold_road_id, 
-	arnold_road_geom, 
-	arnold_road_shape
-) SELECT DISTINCT ON (crossing.osm_id, road.og_object_id)
+	arnold_route_id, 
+	arnold_road_geom
+) SELECT DISTINCT ON (crossing.osm_id, road.route_id)
 	'crossing' AS osm_label,
 	crossing.osm_id AS osm_id, 
 	crossing.geom AS osm_geom,
-	road.og_object_id AS arnold_road_id,
-	road.geom AS arnold_road_geom,
-	road.shape AS arnold_road_shape
+	road.route_id AS arnold_route_id,
+	road.geom AS arnold_road_geom
 FROM shane_bvu1_sw.osm_crossing AS crossing
 JOIN shane_bvu1_sw.arnold_lines AS road 
 	ON ST_Intersects(crossing.geom, road.geom); -- count 55
@@ -131,16 +128,14 @@ INSERT INTO shane_bvu1_sw.conflation_crossing_case (
 	osm_label, 
 	osm_id, 
 	osm_geom, 
-	arnold_road_id, 
-	arnold_road_geom, 
-	arnold_road_shape
-) SELECT DISTINCT ON (crossing.osm_id, road.arnold_object_id) 
+	arnold_route_id, 
+	arnold_road_geom
+) SELECT DISTINCT ON (crossing.osm_id, road.arnold_route_id) 
 	'crossing' AS osm_label,
 	crossing.osm_id AS osm_id, 
 	crossing.geom AS osm_geom,
-	road.arnold_object_id AS arnold_road_id,
-	road.arnold_geom AS arnold_road_geom,
-	road.arnold_shape AS arnold_road_shape
+	road.arnold_route_id AS arnold_route_id,
+	road.arnold_geom AS arnold_road_geom
 FROM shane_bvu1_sw.osm_crossing AS crossing
 JOIN shane_bvu1_roads.conflation_road_case AS road
 	ON ST_Intersects(crossing.geom, road.osm_geom)
@@ -209,9 +204,8 @@ CREATE TABLE shane_bvu1_sw.conflation_connecting_link_case (
 	osm_cl_geom GEOMETRY(LineString, 3857),
 	osm_crossing_id INT8,
 	osm_crossing_geom GEOMETRY(LineString, 3857),
-	arnold_road_id INT8,
-	arnold_road_geom GEOMETRY(LineString, 3857),
-	arnold_road_shape GEOMETRY(MultilinestringM, 3857)
+	arnold_route_id VARCHAR(75),
+	arnold_road_geom GEOMETRY(LineString, 3857)
 );
 
 -- conflates connecting links to roads by its crossing inflation. Meaning, whatever road is conflated to the crossing a connecting link is connected to,
@@ -223,18 +217,16 @@ INSERT INTO shane_bvu1_sw.conflation_connecting_link_case (
 	osm_cl_geom, 
 	osm_crossing_id, 
 	osm_crossing_geom, 
-	arnold_road_id, 
-	arnold_road_geom, 
-	arnold_road_shape
-) SELECT DISTINCT ON (cl.osm_id, crossing.arnold_road_id)
+	arnold_route_id, 
+	arnold_road_geom
+) SELECT DISTINCT ON (cl.osm_id, crossing.arnold_route_id)
     'connecting link' AS osm_label,
     cl.osm_id AS osm_cl_id,
     cl.geom AS osm_cl_geom,
     crossing.osm_id AS osm_crossing_id,
     crossing.osm_geom AS osm_crossing_geom,
-    crossing.arnold_road_id AS arnold_road_id,
-    crossing.arnold_road_geom AS arnold_road_geom,
-    crossing.arnold_road_shape AS arnold_road_shape
+    crossing.arnold_route_id AS arnold_route_id,
+    crossing.arnold_road_geom AS arnold_road_geom
 FROM shane_bvu1_sw.osm_connecting_links AS cl
 JOIN shane_bvu1_sw.conflation_crossing_case AS crossing
     ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 2
@@ -247,18 +239,16 @@ INSERT INTO shane_bvu1_sw.conflation_connecting_link_case (
 	osm_cl_geom, 
 	osm_crossing_id, 
 	osm_crossing_geom, 
-	arnold_road_id, 
-	arnold_road_geom, 
-	arnold_road_shape
-) SELECT DISTINCT ON (cl.osm_id, crossing.arnold_road_id)
+	arnold_route_id, 
+	arnold_road_geom
+) SELECT DISTINCT ON (cl.osm_id, crossing.arnold_route_id)
     'connecting link' AS osm_label,
     cl.osm_id AS osm_cl_id,
     cl.geom AS osm_cl_geom,
     crossing.osm_id AS osm_crossing_id,
     crossing.osm_geom AS osm_crossing_geom,
-    crossing.arnold_road_id AS arnold_road_id,
-    crossing.arnold_road_geom AS arnold_road_geom,
-    crossing.arnold_road_shape AS arnold_road_shape
+    crossing.arnold_route_id AS arnold_route_id,
+    crossing.arnold_road_geom AS arnold_road_geom
 FROM shane_bvu1_sw.osm_footway_null_connecting_links AS cl
 JOIN shane_bvu1_sw.conflation_crossing_case AS crossing
     ON ST_Intersects(cl.geom, crossing.osm_geom); -- count: 90
@@ -292,9 +282,8 @@ WITH ranked_roads AS (
 	SELECT
 		sw.osm_id AS osm_id,
 		sw.geom AS osm_geom,
-		road.og_object_id AS arnold_object_id,
+		road.route_id AS arnold_route_id,
 		road.geom AS arnold_geom,
-		road.shape AS arnold_shape,
 		-- finds the closest points on the road linestring to the start and end point of the sw geom and extracts the corresponding 
 		-- subseciton of the road as its own distinct linestring. 
 	  	ST_LineSubstring( road.geom, LEAST( ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_startpoint(sw.geom), road.geom)), 
@@ -338,9 +327,8 @@ WITH ranked_roads AS (
 	'sidewalk' AS osm_label,
   	osm_id,
   	osm_geom,
-  	arnold_object_id,
-  	seg_geom AS arnold_geom,
-  	arnold_shape
+  	arnold_route_id,
+  	seg_geom AS arnold_geom
 FROM  ranked_roads
 WHERE rank = 1
 AND osm_id NOT IN(
@@ -367,45 +355,39 @@ WHERE osm_id NOT IN (
 
 
 
---- edge case --- 
+--- corner case --- 
 
--- an edge is where a sidewalk segment connects 2 sidewalks that meet at a corner without connecting. Edges typically have the following characteristic:
+-- an corner is where a sidewalk segment connects 2 sidewalks that meet at a corner without connecting. Corners typically have the following characteristic:
 	-- 1: on a corner/ intersection - connected to 2 sidewalks associated to 2 different roads
-CREATE TABLE shane_bvu1_sw.conflation_edge_case (
+CREATE TABLE shane_bvu1_sw.conflation_corner_case (
 	osm_label TEXT,
     osm_id INT8,
     osm_geom GEOMETRY(LineString, 3857),
-    arnold_road1_id INT8,
+    arnold_road1_route_id VARCHAR(75),
     arnold_road1_geom GEOMETRY(LineString, 3857),
-    arnold_road1_shape GEOMETRY(MultilinestringM, 3857),
-    arnold_road2_id INT8,
-    arnold_road2_geom GEOMETRY(LineString, 3857),
-    arnold_road2_shape GEOMETRY(MultilinestringM, 3857)
+    arnold_road2_route_id VARCHAR(75),
+    arnold_road2_geom GEOMETRY(LineString, 3857)
 );
 
 
--- checks the sidewalks at the start and endpoint of the edge. If these two sidewalks are different and have different roads conflated to them,
--- the edge is defined and inherits those conflated roads as well
-INSERT INTO shane_bvu1_sw.conflation_edge_case (
+-- checks the sidewalks at the start and endpoint of the corner. If these two sidewalks are different and have different roads conflated to them,
+-- the corner is defined and inherits those conflated roads as well
+INSERT INTO shane_bvu1_sw.conflation_corner_case (
 	osm_label, 
 	osm_id, 
 	osm_geom, 
-	arnold_road1_id, 
+	arnold_road1_route_id, 
 	arnold_road1_geom,
-	arnold_road1_shape, 
-	arnold_road2_id, 
-	arnold_road2_geom, 
-	arnold_road2_shape
+	arnold_road2_route_id, 
+	arnold_road2_geom
 ) SELECT
-	'edge'AS osm_label,
+	'corner'AS osm_label,
     sw.osm_id AS osm_id,
     sw.geom AS osm_geom,
-    general_case1.arnold_object_id AS arnold_road1_id,
-    general_case1.arnold_geom AS arnold_road1_geom,
-    general_case1.arnold_shape AS arnold_road1_shape, 
-    general_case2.arnold_object_id AS arnold_road2_id,
-    general_case2.arnold_geom AS arnold_road2_geom,
-    general_case2.arnold_shape AS arnold_road2_shape
+    general_case1.arnold_route_id AS arnold_road1_route_id,
+    general_case1.arnold_geom AS arnold_road1_geom, 
+    general_case2.arnold_route_id AS arnold_road2_route_id,
+    general_case2.arnold_geom AS arnold_road2_geom
 FROM shane_bvu1_sw.osm_sw AS sw
 JOIN shane_bvu1_sw.conflation_general_case AS general_case1
     ON ST_Intersects(ST_StartPoint(sw.geom), general_case1.osm_geom)
@@ -417,20 +399,19 @@ WHERE sw.geom NOT IN (
 ) AND (
 	general_case1.osm_id != general_case2.osm_id
 ) AND (
-	general_case1.arnold_object_id != general_case2.arnold_object_id
+	general_case1.arnold_route_id != general_case2.arnold_route_id
 ); -- count: 19
 
   
 
 
 -- gets the special cases where the sidewalk is at more of an angle compared to the road.
-INSERT INTO shane_bvu1_sw.conflation_general_case(osm_label, osm_id, osm_geom, arnold_object_id, arnold_geom, arnold_shape)
+INSERT INTO shane_bvu1_sw.conflation_general_case(osm_label, osm_id, osm_geom, arnold_route_id, arnold_geom)
 WITH ranked_road AS (
 	SELECT DISTINCT 
 		osm_sw.osm_id, 
-		sidewalk.arnold_object_id, 
+		sidewalk.arnold_route_id, 
 		osm_sw.geom AS osm_geom,
-		road.shape AS arnold_shape,
 		ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), road.geom)) ,
 			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom,
 			ST_ClosestPoint(st_startpoint(osm_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom),
@@ -462,47 +443,42 @@ WITH ranked_road AS (
 		SELECT entrance.osm_sw_geom 
 		FROM shane_bvu1_sw.conflation_entrance_case  AS entrance
 		UNION ALL
-		SELECT edge.osm_geom 
-		FROM shane_bvu1_sw.conflation_edge_case  AS edge 
+		SELECT corner.osm_geom 
+		FROM shane_bvu1_sw.conflation_corner_case  AS corner 
 	) AND ( -- specify that the segment should be PARALLEL TO our conflated sidewalk
 		ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 0 AND 20 -- 0
 		OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 160 AND 200 -- 180
 		OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 340 AND 360 -- 360
-	) AND road.og_object_id = sidewalk.arnold_object_id
+	) AND road.route_id = sidewalk.arnold_route_id
 ) 
 SELECT 
 	'sidewalk' AS osm_label,
   	osm_id,
   	osm_geom,
-  	arnold_object_id,
-  	seg_geom AS arnold_geom,
-  	arnold_shape
+  	arnold_route_id,
+  	seg_geom AS arnold_geom
 FROM ranked_road
 WHERE RANK = 1; -- count: 7
 
  
 
--- insert new edge cases that appear after more sidewalks defined. 
-INSERT INTO shane_bvu1_sw.conflation_edge_case (
+-- insert new corner cases that appear after more sidewalks defined. 
+INSERT INTO shane_bvu1_sw.conflation_corner_case (
 	osm_label, 
 	osm_id, 
 	osm_geom, 
-	arnold_road1_id, 
+	arnold_road1_route_id, 
 	arnold_road1_geom,
-	arnold_road1_shape, 
-	arnold_road2_id, 
-	arnold_road2_geom, 
-	arnold_road2_shape
+	arnold_road2_route_id, 
+	arnold_road2_geom
 ) SELECT
-	'edge'AS osm_label,
+	'corner'AS osm_label,
     sw.osm_id AS osm_id,
     sw.geom AS osm_geom,
-    general_case1.arnold_object_id AS arnold_road1_id,
-    general_case1.arnold_geom AS arnold_road1_geom,
-    general_case1.arnold_shape AS arnold_road1_shape, 
-    general_case2.arnold_object_id AS arnold_road2_id,
-    general_case2.arnold_geom AS arnold_road2_geom,
-    general_case2.arnold_shape AS arnold_road2_shape
+    general_case1.arnold_route_id AS arnold_road1_route_id,
+    general_case1.arnold_geom AS arnold_road1_geom, 
+    general_case2.arnold_route_id AS arnold_road2_route_id,
+    general_case2.arnold_geom AS arnold_road2_geom
 FROM shane_bvu1_sw.osm_sw AS sw
 JOIN shane_bvu1_sw.conflation_general_case AS general_case1
     ON ST_Intersects(ST_StartPoint(sw.geom), general_case1.osm_geom)
@@ -513,22 +489,17 @@ WHERE sw.geom NOT IN (
 	FROM shane_bvu1_sw.conflation_general_case
 ) AND sw.geom NOT IN (
 	SELECT osm_geom
-	FROM shane_bvu1_sw.conflation_edge_case
+	FROM shane_bvu1_sw.conflation_corner_case
 ) AND (
 	general_case1.osm_id != general_case2.osm_id
 ) AND (
-	general_case1.arnold_object_id != general_case2.arnold_object_id
+	general_case1.arnold_route_id != general_case2.arnold_route_id
 ); -- count: 3
-
-
-
-
-
 
 
 -- checkpoint --
 	-- what's in?
-SELECT * FROM shane_bvu1_sw.conflation_edge_case
+SELECT * FROM shane_bvu1_sw.conflation_corner_case
 	-- what's not in?
 SELECT * 
 FROM shane_bvu1_sw.osm_sw
@@ -539,7 +510,7 @@ WHERE osm_id NOT IN (
 ) AND osm_id NOT IN (
 	SELECT osm_id FROM shane_bvu1_sw.conflation_general_case
 ) AND osm_id NOT IN (
-	SELECT osm_id FROM shane_bvu1_sw.conflation_edge_case
+	SELECT osm_id FROM shane_bvu1_sw.conflation_corner_case
 );
 
 
@@ -552,7 +523,7 @@ FROM shane_bvu1_sw.osm_sw
 WHERE osm_id NOT IN (
     SELECT osm_id FROM shane_bvu1_sw.conflation_general_case
 ) AND osm_id NOT IN (
-    SELECT osm_id FROM shane_bvu1_sw.conflation_edge_case
+    SELECT osm_id FROM shane_bvu1_sw.conflation_corner_case
 ) AND osm_id NOT IN (
 	SELECT osm_sw_id FROM shane_bvu1_sw.conflation_entrance_case
 ) AND osm_id NOT IN (
@@ -565,33 +536,12 @@ FROM shane_bvu1_sw.arnold_lines
 WHERE shape NOT IN (
     SELECT arnold_shape FROM shane_bvu1_sw.conflation_general_case
 ) AND shape NOT IN (
-    SELECT arnold_road1_shape FROM shane_bvu1_sw.conflation_edge_case
+    SELECT arnold_road1_shape FROM shane_bvu1_sw.conflation_corner_case
 ) AND shape NOT IN (
-	SELECT arnold_road2_shape FROM shane_bvu1_sw.conflation_edge_case
+	SELECT arnold_road2_shape FROM shane_bvu1_sw.conflation_corner_case
 ) AND shape NOT IN (
 	SELECT arnold_road_shape FROM shane_bvu1_sw.conflation_connecting_link_case
 ); -- count: 25
-
-
--- special case specific checks
-SELECT *
-FROM shane_bvu1_sw.conflation_connecting_link_case
-WHERE osm_id IN (607810499, 607810496, 1074618891);
-
-SELECT * FROM shane_bvu1_sw.osm_connecting_links
-WHERE osm_id NOT IN (
-	SELECT osm_cl_id FROM shane_bvu1_sw.conflation_connecting_link_case
-)
-
-SELECT * FROM shane_bvu1_sw.osm_crossing
-
-SELECT * FROM shane_bvu1_sw.arnold_lines 
-
--- connecting link special case: 607,810,499 / 1,074,618,891 / 607,810,496
--- crossing special case: 67,144,865 / 1,074,618,890
-
-
-
 
 
 
@@ -608,12 +558,12 @@ FROM shane_bvu1_sw.osm_sw AS sw
 WHERE osm_id NOT IN (
 	SELECT osm_id FROM shane_bvu1_sw.conflation_general_case
 ) AND osm_id NOT IN (
-    SELECT osm_id FROM shane_bvu1_sw.conflation_edge_case
+    SELECT osm_id FROM shane_bvu1_sw.conflation_corner_case
 ) AND osm_id NOT IN (
 	SELECT osm_sw_id FROM shane_bvu1_sw.conflation_entrance_case
 ) AND osm_id NOT IN (
 	SELECT osm_cl_id FROM shane_bvu1_sw.conflation_connecting_link_case
-); -- count: 51
+); -- count: 41
 
 
 -- split the weird case linestrings into segments by linestring vertex
@@ -625,17 +575,17 @@ CREATE TABLE shane_bvu1_sw.weird_case_segments AS
 		   ORDER BY osm_id, (pt).path)-1 AS osm_segment_number,
 		       (ST_MakeLine(lag((pt).geom, 1, NULL) OVER (PARTITION BY osm_id ORDER BY osm_id, (pt).path), (pt).geom)) AS geom
 		FROM (SELECT osm_id, ST_DumpPoints(geom) AS pt FROM shane_bvu1_sw.weird_cases) AS dumps )
-	SELECT * FROM segments WHERE geom IS NOT NULL; --count: 183
-
+	SELECT * FROM segments WHERE geom IS NOT NULL; --count: 162
+	
 
 -- segments that are connecting links
 CREATE TABLE shane_bvu1_sw.weird_case_connecting_link_case AS
 	WITH connlink_rn AS (
 		SELECT DISTINCT ON 
-			( link.osm_id, link.osm_segment_number, crossing.arnold_road_id )  
+			( link.osm_id, link.osm_segment_number, crossing.arnold_route_id )  
 			link.osm_id AS osm_id, 
 			link.osm_segment_number, 
-			crossing.arnold_road_id AS arnold_object_id, 
+			crossing.arnold_route_id AS arnold_route_id, 
 			crossing.arnold_road_geom AS arnold_road_geom,
 			link.geom AS osm_geom, 
 			crossing.osm_geom AS cross_geom
@@ -643,8 +593,14 @@ CREATE TABLE shane_bvu1_sw.weird_case_connecting_link_case AS
 	    JOIN shane_bvu1_sw.weird_case_segments AS link
 	    ON ST_Intersects(crossing.osm_geom, st_startpoint(link.geom)) OR ST_Intersects(crossing.osm_geom, st_endpoint(link.geom))
 	    WHERE ST_length(link.geom) < 12)
-	SELECT osm_id, osm_segment_number, osm_geom, arnold_object_id, arnold_road_geom
-	FROM connlink_rn  -- 3
+	SELECT 
+		'connecting link' AS osm_label, 
+		osm_id, 
+		osm_segment_number, 
+		osm_geom, 
+		arnold_route_id, 
+		arnold_road_geom
+	FROM connlink_rn  -- count: 3
 	
 	
 	
@@ -652,249 +608,234 @@ CREATE TABLE shane_bvu1_sw.weird_case_connecting_link_case AS
 CREATE TABLE shane_bvu1_sw.weird_case_general_case AS
 WITH ranked_roads AS (
 	SELECT
-		sw.osm_id AS osm_id,
-		sw.osm_segment_number AS osm_segment_number,
-		sw.geom AS osm_geom,
-		road.og_object_id AS arnold_object_id,
-		road.geom AS arnold_geom,
-		road.shape AS arnold_shape,
-		-- finds the closest points on the road linestring to the start and end point of the sw geom and extracts the corresponding 
-		-- subseciton of the road as its own distinct linestring. 
-	  	ST_LineSubstring( road.geom, LEAST( ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_startpoint(sw.geom), road.geom)), 
-	  		ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_endpoint(sw.geom), road.geom))), 
-	  		GREATEST( ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_startpoint(sw.geom), road.geom)), 
-	  		ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ) AS seg_geom,
-	  	-- calculate the coverage of sidewalk geom within the buffer of the road
-	  	ST_Length( ST_Intersection( sw.geom, ST_Buffer( ST_LineSubstring( road.geom, LEAST( ST_LineLocatePoint(road.geom, 
-	  		ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, 
-	  		ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), 18))) / ST_Length(sw.geom) AS sw_coverage_bigroad,
-	  	--  calculates a ranking or sequential number for each row based on the distance between the sw and road geom.
+		sidewalk.osm_id AS osm_id,
+	  	big_road.route_id AS arnold_route_id,
+	  	sidewalk.geom AS osm_geom,
+	  	sidewalk.osm_segment_number AS osm_segment_number,
+	 	-- the road segments that the sidewalk is conflated to
+	  	ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) ,
+	  		ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))),
+	  		GREATEST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) ,
+	  		ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ) AS seg_geom,
+	  	-- rank this based on the distance of the midpoint of the sidewalk to the midpoint of the road
 	  	ROW_NUMBER() OVER (
-	  		PARTITION BY sw.geom
-	  		ORDER BY ST_distance( 
-	  			ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)), 
-	  				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
-	  				GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)), 
-	  				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom)))
-	  			),
-	  			sw.geom
-	  		)
+	  		PARTITION BY sidewalk.geom
+	  		ORDER BY ST_distance( ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom,
+	  			ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
+	  			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))), GREATEST(ST_LineLocatePoint(big_road.geom,
+	  			ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
+	  			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom )
 	  	) AS RANK
-	FROM shane_bvu1_sw.weird_case_segments AS sw
-	JOIN shane_bvu1_sw.arnold_lines AS road 
-		ON ST_Intersects(ST_Buffer(sw.geom, 5), ST_Buffer(road.geom, 18))
+	FROM shane_bvu1_sw.weird_case_segments AS sidewalk
+	JOIN shane_bvu1_sw.arnold_lines AS big_road ON ST_Intersects(ST_Buffer(sidewalk.geom, 5), ST_Buffer(big_road.geom, 18))
 	WHERE (
-		--  calculates the angle between a road line segment and sw line segment and checks if parallel -> angle ~ 0, 180, or 360
-		ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
-			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
-			GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)), 
-			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 0 AND 10 -- 0 
-		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
-			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
-			GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
-			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 170 AND 190 -- 180
-		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
-			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
-			GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
-			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 350 AND 360 -- 360
-		AND (sw.osm_id, sw.osm_segment_number) NOT IN (
-			SELECT osm_id, osm_segment_number
-	    	FROM shane_bvu1_sw.weird_case_connecting_link_case
-		)
-	)
-) SELECT DISTINCT
+		ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), 
+			big_road.geom)) , ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))),
+			GREATEST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) ,
+			ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 0 AND 10 -- 0 
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))), GREATEST(ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 170 AND 190 -- 180
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))), GREATEST(ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
+			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 350 AND 360 ) -- 360
+    AND (sidewalk.osm_id, sidewalk.osm_segment_number) NOT IN (
+    	SELECT osm_id, osm_segment_number
+      	FROM shane_bvu1_sw.weird_case_connecting_link_case
+    )
+)
+SELECT
 	'sidewalk' AS osm_label,
   	osm_id,
   	osm_segment_number,
   	osm_geom,
-  	arnold_object_id,
-  	seg_geom AS arnold_geom,
-  	arnold_shape
-FROM  ranked_roads
+  	arnold_route_id,
+  	seg_geom AS arnold_geom
+FROM ranked_roads
 WHERE rank = 1
-ORDER BY osm_id, osm_segment_number;
-
-SELECT * FROM shane_bvu1_sw.weird_case_general_case
-WHERE (osm_id, osm_segment_number) NOT IN (
-	SELECT osm_id, segment_number FROM jolie_bel1.weird_case_sw
-)
+ORDER BY osm_id, osm_segment_number; -- count: 15
 
 
 
+	
+	
 
 
 
 -- in the case where a connecting link segment and general case segment are both conflated and share the same osm_id, the segments in between that
 -- are NOT conflated will inherit the road conflation the conflated sidewalk and connecting link share. 
-INSERT INTO shane_bvu1_sw.weird_case_general_case (osm_id, segment_number, arnold_objectid, osm_geom, arnold_geom)
+INSERT INTO shane_bvu1_sw.weird_case_general_case (osm_label, osm_id, osm_segment_number, arnold_route_id, osm_geom, arnold_geom)
 WITH min_max_segments AS (
 	SELECT 
-	sw.osm_id, 
-	MIN(LEAST(sw.segment_number, link.segment_number)) AS min_segment, 
-	MAX(GREATEST(sw.segment_number, link.segment_number)) AS max_segment, 
-	sw.arnold_objectid
-	FROM jolie_bel1.weird_case_sw AS sw
-	JOIN jolie_bel1.weird_case_connlink AS link
-		ON sw.osm_id = link.osm_id AND sw.arnold_objectid = link.arnold_objectid
-	GROUP BY sw.osm_id, sw.arnold_objectid
+		sw.osm_id, 
+		MIN(LEAST(sw.osm_segment_number, link.osm_segment_number)) AS min_segment, 
+		MAX(GREATEST(sw.osm_segment_number, link.osm_segment_number)) AS max_segment, 
+		sw.arnold_route_id
+	FROM shane_bvu1_sw.weird_case_general_case AS sw
+	JOIN shane_bvu1_sw.weird_case_connecting_link_case AS link
+		ON sw.osm_id = link.osm_id AND sw.arnold_route_id = link.arnold_route_id
+	GROUP BY sw.osm_id, sw.arnold_route_id
 )
 SELECT 
+	'sidewalk' AS osm_label,
 	seg_sw.osm_id, 
-	seg_sw.segment_number,  
-	mms.arnold_objectid, 
+	seg_sw.osm_segment_number,  
+	mms.arnold_route_id, 
 	seg_sw.geom,
 	ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)) ,
 		ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom,
 		ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom),
 		road.geom))) ) AS seg_geom
-FROM jolie_bel1.weird_case_seg AS seg_sw
+FROM shane_bvu1_sw.weird_case_segments AS seg_sw
 JOIN min_max_segments AS mms 
 	ON seg_sw.osm_id = mms.osm_id
-JOIN jolie_bel1.arnold_roads road
-	ON mms.arnold_objectid = road.og_objectid
-WHERE seg_sw.segment_number BETWEEN mms.min_segment AND mms.max_segment
-AND (seg_sw.osm_id, seg_sw.segment_number) NOT IN (
-	SELECT osm_id, segment_number
-	FROM jolie_bel1.weird_case_sw
-) AND (seg_sw.osm_id, seg_sw.segment_number) NOT IN (
+JOIN shane_bvu1_sw.arnold_lines AS road
+	ON mms.arnold_route_id = road.route_id
+WHERE seg_sw.osm_segment_number BETWEEN mms.min_segment AND mms.max_segment
+AND (seg_sw.osm_id, seg_sw.osm_segment_number) NOT IN (
 	SELECT 
 		osm_id, 
-		segment_number
-	FROM jolie_bel1.weird_case_connlink
+		osm_segment_number
+	FROM shane_bvu1_sw.weird_case_general_case
+) AND (seg_sw.osm_id, seg_sw.osm_segment_number) NOT IN (
+	SELECT 
+		osm_id, 
+		osm_segment_number
+	FROM shane_bvu1_sw.weird_case_connecting_link_case
 )
-ORDER BY seg_sw.osm_id, seg_sw.segment_number;
+ORDER BY seg_sw.osm_id, seg_sw.osm_segment_number; -- count: 2
 
 
 	
 	
-	
-	
-	
-	
-	
-	
-	
--- deal with segments that have a segment_number in between the min and max segment_number of the 
-INSERT INTO jolie_bel1.weird_case_sw (osm_id, segment_number, arnold_objectid, osm_geom, arnold_geom)
-	WITH min_max_segments AS (
-	  SELECT osm_id, MIN(segment_number) AS min_segment, MAX(segment_number) AS max_segment, arnold_objectid
-	  FROM jolie_bel1.weird_case_sw
-	  GROUP BY osm_id, arnold_objectid
-	)
-	SELECT seg_sw.osm_id, seg_sw.segment_number,  mms.arnold_objectid, seg_sw.geom,
-		   ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))) ) AS seg_geom
-	FROM jolie_bel1.weird_case_seg seg_sw
-	JOIN min_max_segments mms ON seg_sw.osm_id = mms.osm_id
-	JOIN jolie_bel1.arnold_roads road
-	ON mms.arnold_objectid = road.og_objectid
-	WHERE seg_sw.segment_number BETWEEN mms.min_segment AND mms.max_segment
-		  AND (seg_sw.osm_id, seg_sw.segment_number) NOT IN (
-		  		SELECT osm_id, segment_number
-		  		FROM jolie_bel1.weird_case_sw
-		  )
-		  AND (seg_sw.osm_id, seg_sw.segment_number) NOT IN (
-		  		SELECT osm_id, segment_number
-		  		FROM jolie_bel1.weird_case_connlink
-		  )
-	ORDER BY seg_sw.osm_id, seg_sw.segment_number;
+-- conflates the weird case segments that are between 2 different weird case segments that conflated to the same road, giving all the roads
+-- in between that road conflation as well. 
+INSERT INTO shane_bvu1_sw.weird_case_general_case (osm_label, osm_id, osm_segment_number, arnold_route_id, osm_geom, arnold_geom)
+WITH min_max_segments AS (
+  	SELECT 
+  		osm_id, 
+  		MIN(osm_segment_number) AS min_segment, 
+  		MAX(osm_segment_number) AS max_segment, 
+  		arnold_route_id
+  	FROM shane_bvu1_sw.weird_case_general_case
+  	GROUP BY osm_id, arnold_route_id
+)
+SELECT 
+	'sidewalk' AS osm_label,
+	seg_sw.osm_id AS osm_id, 
+	seg_sw.osm_segment_number AS osm_segment_number, 
+	mms.arnold_route_id AS arnold_route_id, 
+	seg_sw.geom AS osm_geom,
+	ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)),
+		ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))), 
+		GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)),
+		ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))) ) AS seg_geom
+FROM shane_bvu1_sw.weird_case_segments seg_sw
+JOIN min_max_segments mms 
+	ON seg_sw.osm_id = mms.osm_id
+JOIN shane_bvu1_sw.arnold_lines  road
+	ON mms.arnold_route_id = road.route_id
+WHERE seg_sw.osm_segment_number BETWEEN mms.min_segment AND mms.max_segment
+AND (seg_sw.osm_id, seg_sw.osm_segment_number) NOT IN (
+	SELECT osm_id, osm_segment_number
+	FROM shane_bvu1_sw.weird_case_general_case 
+)
+AND (seg_sw.osm_id, seg_sw.osm_segment_number) NOT IN (
+	SELECT osm_id, osm_segment_number
+	FROM shane_ud1_sw.osm_footway_null_connecting_links 
+)
+ORDER BY seg_sw.osm_id, seg_sw.osm_segment_number; -- count: 1
 
 
--- Step 3: Deal with edge
-CREATE TABLE jolie_bel1.weird_case_edge AS
-	SELECT  edge.osm_id AS osm_id,
-			edge.segment_number AS segment_number,
-			centerline1.arnold_objectid AS arnold_objectid1,
-			centerline2.arnold_objectid AS arnold_objectid2,
-			edge.geom AS osm_geom
-	FROM jolie_bel1.weird_case_seg edge
-	JOIN jolie_bel1.weird_case_sw centerline1 ON st_intersects(st_startpoint(edge.geom), centerline1.osm_geom)
-	JOIN jolie_bel1.weird_case_sw centerline2 ON st_intersects(st_endpoint(edge.geom), centerline2.osm_geom)
-	WHERE   (edge.osm_id, edge.segment_number) NOT IN (
-					SELECT sw.osm_id, sw.segment_number FROM jolie_bel1.weird_case_sw sw
-					UNION ALL 
-					SELECT link.osm_id, link.segment_number FROM jolie_bel1.weird_case_connlink link
+
+-- conflate sidewalks that are parallel to the already conflated sidewalk
+INSERT INTO shane_bvu1_sw.weird_case_general_case (osm_label, osm_id, osm_segment_number, arnold_route_id, osm_geom, arnold_geom)
+WITH ranked_road AS (
+	SELECT DISTINCT 
+		osm_sw.osm_id AS osm_id, 
+		osm_sw.osm_segment_number AS osm_segment_number, 
+		sidewalk.arnold_route_id AS arnold_route_id, 
+		osm_sw.geom AS osm_geom,
+		ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), big_road.geom)),
+			ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), big_road.geom))), 
+			GREATEST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), big_road.geom)),
+			ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), big_road.geom))) ) AS seg_geom,
+			-- rank this based on the distance of the midpoint of the sidewalk to the midpoint of the road
+			ROW_NUMBER() OVER (
+				PARTITION BY osm_sw.geom
+				ORDER BY ST_distance( 
+					ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom),
+						big_road.geom)) , ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), big_road.geom))),
+					  	GREATEST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), big_road.geom)),
+					  	ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), big_road.geom)))
+					), osm_sw.geom 
 				)
-			AND ST_Equals(centerline1.osm_geom, centerline2.osm_geom) IS FALSE
-			AND centerline1.arnold_objectid != centerline2.arnold_objectid -- 0
-
-			
-			
--- Step 4: Deal with sidewalk that are parallel to the already conflated sidewalk
-INSERT INTO jolie_bel1.weird_case_sw (osm_id, segment_number,  arnold_objectid, osm_geom, arnold_geom)
-	WITH ranked_road AS (
-		SELECT DISTINCT osm_sw.osm_id, osm_sw.segment_number, sidewalk.arnold_objectid, osm_sw.geom AS osm_geom,
-			            ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), road.geom))) ) AS seg_geom,
-						  -- rank this based on the distance of the midpoint of the sidewalk to the midpoint of the road
-						  ROW_NUMBER() OVER (
-						  	PARTITION BY osm_sw.geom
-						  	ORDER BY ST_distance( 
-						  				ST_LineSubstring( road.geom,
-						  								  LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), road.geom))),
-						  								  GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(osm_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(osm_sw.geom), road.geom))) ),
-						  				osm_sw.geom )
-						  	) AS RANK
-		FROM jolie_bel1.weird_case_seg osm_sw
-		JOIN jolie_bel1.weird_case_sw sidewalk
+			) AS RANK
+	FROM shane_bvu1_sw.weird_case_segments osm_sw
+	JOIN shane_bvu1_sw.weird_case_general_case sidewalk
 		ON 	ST_Intersects(st_startpoint(sidewalk.osm_geom), st_startpoint(osm_sw.geom))
-			OR ST_Intersects(st_startpoint(sidewalk.osm_geom), st_endpoint(osm_sw.geom))
-			OR ST_Intersects(st_endpoint(sidewalk.osm_geom), st_startpoint(osm_sw.geom))
-			OR ST_Intersects(st_endpoint(sidewalk.osm_geom), st_endpoint(osm_sw.geom))
-		JOIN jolie_bel1.arnold_roads road
+		OR ST_Intersects(st_startpoint(sidewalk.osm_geom), st_endpoint(osm_sw.geom))
+		OR ST_Intersects(st_endpoint(sidewalk.osm_geom), st_startpoint(osm_sw.geom))
+		OR ST_Intersects(st_endpoint(sidewalk.osm_geom), st_endpoint(osm_sw.geom))
+	JOIN shane_bvu1_sw.arnold_lines big_road
 		ON ST_Intersects(ST_Buffer(osm_sw.geom, 5), ST_Buffer(osm_sw.geom, 18))
-		WHERE (osm_sw.osm_id, osm_sw.segment_number) NOT IN (
-					SELECT sw.osm_id, sw.segment_number FROM jolie_bel1.weird_case_sw sw
+	WHERE (osm_sw.osm_id, osm_sw.osm_segment_number) NOT IN (
+		SELECT sw.osm_id, sw.osm_segment_number FROM shane_bvu1_sw.weird_case_general_case AS sw
+		UNION ALL 
+		SELECT link.osm_id, link.osm_segment_number FROM shane_bvu1_sw.weird_case_connecting_link_case AS link
+	) AND ( -- specify that the segment should be PARALLEL TO our conflated sidewalk
+		ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 0 AND 20 -- 0 
+		OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 160 AND 200 -- 180
+		OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 340 AND 360  ) -- 360 
+		AND big_road.route_id = sidewalk.arnold_route_id
+)
+SELECT 
+	'sidewalk' AS osm_label,
+	osm_id, 
+	osm_segment_number, 
+	arnold_route_id, 
+	osm_geom, 
+	seg_geom AS arnold_geom
+FROM ranked_road
+WHERE RANK = 1; -- count: 3
+
+
+-- checkpoint --
+SELECT * FROM shane_bvu1_sw.weird_case_general_case
+
+
+
+
+-- Step 3: Deal with corner
+CREATE TABLE shane_bvu1_sw.weird_case_corner_case AS
+	SELECT  corner.osm_id AS osm_id,
+			corner.osm_segment_number AS osm_segment_number,
+			road1.arnold_route_id AS arnold_road1_route_id,
+			road2.arnold_route_id AS arnold_road2_route_id,
+			corner.geom AS osm_geom
+	FROM shane_bvu1_sw.weird_case_segments corner
+	JOIN (	SELECT * 
+			FROM shane_bvu1_sw.weird_case_general_case
+			UNION ALL
+			SELECT osm_label, osm_id, 0 AS osm_segment_number, osm_geom, arnold_route_id, arnold_geom
+			FROM shane_bvu1_sw.conflation_general_case
+		 ) road1
+		ON st_intersects(st_startpoint(corner.geom), road1.osm_geom)
+	JOIN (  SELECT * 
+			FROM shane_bvu1_sw.weird_case_general_case
+			UNION ALL
+			SELECT osm_label, osm_id, 0 AS osm_segment_number, osm_geom, arnold_route_id, arnold_geom
+			FROM shane_bvu1_sw.conflation_general_case
+		 ) road2
+		ON st_intersects(st_endpoint(corner.geom), road2.osm_geom)
+	WHERE   (corner.osm_id, corner.osm_segment_number) NOT IN (
+					SELECT sw.osm_id, sw.osm_segment_number FROM shane_bvu1_sw.weird_case_general_case sw
 					UNION ALL 
-					SELECT link.osm_id, link.segment_number FROM jolie_bel1.weird_case_connlink link
-					UNION ALL 
-					SELECT edge.osm_id, edge.segment_number FROM jolie_bel1.weird_case_edge edge
+					SELECT link.osm_id, link.osm_segment_number FROM shane_bvu1_sw.weird_case_connecting_link_case link
 				)
-			  AND ( -- specify that the segment should be PARALLEL TO our conflated sidewalk
-					ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 0 AND 20 -- 0 
-				    OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 160 AND 200 -- 180
-				    OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.geom))) BETWEEN 340 AND 360  ) -- 360 
-			 AND road.og_objectid = sidewalk.arnold_objectid
-		)
-	SELECT osm_id, segment_number, arnold_objectid, osm_geom, seg_geom AS arnold_geom
-	FROM ranked_road
-	WHERE RANK = 1
-
-
-
--- checkpoint
--- for the case where a osm_id is looking at 2 different arnold_objectid,
--- it will look at segments that are not conflated, uptil the first segment that intersects with the link
---SELECT DISTINCT seg.osm_id, seg.segment_number
---FROM jolie_bel1.weird_case_seg seg
---JOIN jolie_bel1.confation_connlink link ON ST_Intersects(link.osm_geom, seg.geom)
---WHERE (seg.osm_id, seg.segment_number) NOT IN (
---		SELECT osm_id, segment_number
---		FROM temp_weird_case_sw
---	)
---ORDER BY seg.osm_id, seg.segment_number
-
-
-
-WITH partial_length AS (
-	  SELECT osm_id, arnold_objectid,  MIN(segment_number) AS min_segment, MAX(segment_number) AS max_segment, SUM(ST_Length(osm_geom)) AS partial_length, st_linemerge(ST_union(osm_geom), TRUE) AS geom
-	  FROM jolie_bel1.weird_case_sw
-	  GROUP BY osm_id,  arnold_objectid
-	)
-	SELECT sw.osm_id, pl.min_segment, pl.max_segment, pl.arnold_objectid, pl.geom AS seg_geom, sw.geom AS osm_geom, pl.partial_length/ST_Length(sw.geom) AS percent_conflated
-	FROM jolie_bel1.weird_case sw
-	JOIN partial_length pl ON sw.osm_id = pl.osm_id; 
-
-
-
---WITH conf_seg AS (
---	  SELECT osm_id, arnold_objectid,  MIN(segment_number) AS min_segment, MAX(segment_number) AS max_segment, st_linemerge(ST_union(osm_geom), TRUE) AS geom
---	  FROM temp_weird_case_sw
---	  GROUP BY osm_id,  arnold_objectid
---	)
---	SELECT seg.osm_id, seg.segment_number, conf_seg.min_segment, conf_seg.max_segment, conf_seg.geom AS conf_geom, seg.geom AS seg_geom, st_length(seg.geom), conf_seg.arnold_objectid
---	FROM jolie_bel1.weird_case_seg seg
---	JOIN conf_seg
---	ON seg.osm_id = conf_seg.osm_id
---	WHERE seg.segment_number NOT BETWEEN min_segment AND max_segment
---		  AND (seg.osm_id, seg.segment_number) NOT IN (SELECT osm_id, segment_number FROM temp_weird_case_sw)
---	ORDER BY seg.osm_id, conf_seg.min_segment, seg.segment_number; 
-
+			AND ST_Equals(road1.osm_geom, road2.osm_geom) IS FALSE
+			AND road1.arnold_route_id != road2.arnold_route_id -- count: 3
