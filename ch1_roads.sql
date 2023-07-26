@@ -80,7 +80,7 @@ SELECT
 	lanes, 
 	osm_geom
 FROM ranked_road
-WHERE RANK = 1; 
+WHERE RANK = 1; -- count: 3 total after looping twice
 
 
 -- checkpoint --
@@ -107,10 +107,17 @@ WITH ranked_roads AS (
 	ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
 		ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom,
 		ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), 
-		arnold.geom))) ) AS seg_geom
+		arnold.geom))) ) AS seg_geom,
+	ROW_NUMBER() OVER (
+		PARTITION BY osm.geom
+		ORDER BY ST_distance( ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom),
+			arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))),
+		  	GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom,
+		  	ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom )
+	) AS RANK
 	FROM shane_ch1_roads.osm_roads_add_lanes AS osm
 	RIGHT JOIN shane_ch1_roads.arnold_lines AS arnold
-	ON ST_Intersects(ST_buffer(osm.geom, (osm.lanes)*1), arnold.geom)
+	ON ST_Intersects(ST_buffer(osm.geom, (osm.lanes) * 2), arnold.geom)
 	WHERE (  ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, 
 		ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))),
 		GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, 
@@ -120,7 +127,7 @@ WITH ranked_roads AS (
 		ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom),
 		arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 170 AND 190 -- 180
 	OR ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)),
-		ST_LineLocatePoint(arnold.geom, ST_ClosedstPoint(st_endpoint(osm.geom), arnold.geom))), 
+		ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), 
 		GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
 		ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 350 AND 360 ) -- 360
 )
@@ -129,10 +136,11 @@ SELECT
 	osm_road_name,
 	osm_geom,
 	arnold_route_id,
+	RANK,
 	seg_geom AS arnold_geom,
 	arnold_shape AS arnold_shape
 FROM ranked_roads
-WHERE ST_Length(seg_geom) > 4; -- count: 418
+WHERE ST_Length(seg_geom) > 4; -- count: 452
 
    
    
