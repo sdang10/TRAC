@@ -4,8 +4,8 @@
 CREATE TABLE shane_ch1_roads.osm_roads AS (
 	SELECT *
 	FROM shane_data_setup.osm_lines
-	WHERE highway IN ('motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'road', 'busway', 'unclassified', 'residential') 
-		AND geom && st_setsrid( st_makebox2d( st_makepoint(-13617414,6042417), st_makepoint(-13614697,6045266)), 3857)
+	WHERE highway IN ('motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'road', 'busway', 'unclassified', 'residential')
+	AND geom && st_setsrid( st_makebox2d( st_makepoint(-13617414,6042417), st_makepoint(-13614697,6045266)), 3857)
 ); -- count: 518
 
 	
@@ -22,7 +22,7 @@ WHERE osm_id NOT IN (
 AND highway != 'footway';
 		
 
-
+-- arnold lines in ch1 --
 CREATE TABLE shane_ch1_roads.arnold_lines AS (
 	SELECT *
  	FROM shane_data_setup.arnold_lines
@@ -37,6 +37,15 @@ CREATE TABLE shane_ch1_roads.osm_roads_add_lanes AS (
 	FROM shane_ch1_roads.osm_roads
 	WHERE tags ? 'lanes' 
 ); -- count: 515
+
+
+-- checkpoint --
+	-- what roads have no lanes?
+SELECT * FROM shane_ch1_roads.osm_roads
+WHERE osm_id NOT IN (
+	SELECT osm_id FROM shane_ch1_roads.osm_roads_add_lanes
+);
+
 
 
 
@@ -102,6 +111,7 @@ WITH ranked_roads AS (
 	arnold.route_id AS arnold_route_id, 
 	arnold.shape AS arnold_shape,
 	osm.osm_id AS osm_id, 
+	osm.lanes AS lanes, 
 	osm.osm_road_name AS osm_road_name,  
 	osm.geom AS osm_geom,
 	ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
@@ -109,12 +119,12 @@ WITH ranked_roads AS (
 		ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), 
 		arnold.geom))) ) AS seg_geom,
 	ROW_NUMBER() OVER (
-		PARTITION BY osm.geom
-		ORDER BY ST_distance( ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom),
-			arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))),
-		  	GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom,
-		  	ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom )
-	) AS RANK
+            PARTITION BY osm.geom
+            ORDER BY 
+                ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4), ST_Buffer(arnold.geom, 1))) DESC
+        ) AS RANK,
+    ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(arnold.geom, 1)) AS intersection_geom,
+    ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(arnold.geom, 1))) AS overlap_area
 	FROM shane_ch1_roads.osm_roads_add_lanes AS osm
 	RIGHT JOIN shane_ch1_roads.arnold_lines AS arnold
 	ON ST_Intersects(ST_buffer(osm.geom, (osm.lanes) * 2), arnold.geom)
@@ -134,16 +144,32 @@ WITH ranked_roads AS (
 SELECT
 	osm_id,
 	osm_road_name,
+	lanes,
 	osm_geom,
 	arnold_route_id,
 	RANK,
 	seg_geom AS arnold_geom,
-	arnold_shape AS arnold_shape
+	arnold_shape AS arnold_shape,
+	intersection_geom,
+	overlap_area
 FROM ranked_roads
-WHERE ST_Length(seg_geom) > 4; -- count: 452
+WHERE 
+	ST_Length(seg_geom) > 4
+AND RANK = 1
+OR (
+	RANK = 2
+	AND EXISTS (
+    	SELECT 1
+    	FROM ranked_roads AS ia2
+    	WHERE ia2.osm_id = ranked_roads.osm_id
+     	AND ia2.rank = 1
+     	AND ST_Area(ST_Intersection(ST_Buffer(ia2.seg_geom, 4), ST_Buffer(ranked_roads.seg_geom, 4))) < 100
+    ) AND ST_Length(seg_geom) > 4
+); -- count: 449
 
-   
-   
+
+
+  
 -- checkpoint --
 	-- what's in? --
 SELECT * FROM shane_ch1_roads.conflation_road_case
@@ -160,27 +186,35 @@ SELECT * FROM shane_ch1_roads.arnold_lines
 
 -- if a osm road that has defined lanes interesects with a conflated osm road and they share the same name, the non-conflated road 
 -- gets conflated inheriting the conflation of the conflated road
-INSERT INTO shane_ch1_roads.conflation_road_case(osm_id, osm_road_name, osm_geom, arnold_route_id, arnold_geom)
-SELECT DISTINCT ON (lanes.osm_id, road_case.arnold_route_id)
-	lanes.osm_id AS osm_id, 
-	lanes.osm_road_name AS osm_road_name,
-	lanes.geom AS osm_geom,
-	road_case.arnold_route_id AS arnold_route_id,
-	road_case.arnold_geom AS arnold_geom
-FROM shane_ch1_roads.osm_roads_add_lanes lanes
-JOIN shane_ch1_roads.conflation_road_case road_case
-	ON lanes.osm_road_name = road_case.osm_road_name 
-AND ( ST_Intersects(st_startpoint(lanes.geom), st_startpoint(road_case.osm_geom))
-	OR ST_Intersects(st_startpoint(lanes.geom), st_endpoint(road_case.osm_geom))
-	OR ST_Intersects(st_endpoint(lanes.geom), st_startpoint(road_case.osm_geom))
-	OR ST_Intersects(st_endpoint(lanes.geom), st_endpoint(road_case.osm_geom))
-)
-WHERE lanes.osm_id NOT IN (
-	SELECT osm_id
-	FROM shane_ch1_roads.conflation_road_case
-); -- count: 11
--- add 2
+--INSERT INTO shane_ch1_roads.conflation_road_case (
+--	osm_id, 
+--	osm_road_name,
+--	lanes,
+--	osm_geom, 
+--	arnold_route_id, 
+--	arnold_geom
+--	arnold_shape)
+--SELECT DISTINCT ON (lanes.osm_id, road_case.arnold_route_id)
+--	lanes.osm_id AS osm_id, 
+--	lanes.osm_road_name AS osm_road_name,
+--	lanes.lanes AS lanes,
+--	lanes.geom AS osm_geom,
+--	road_case.arnold_route_id AS arnold_route_id,
+--	road_case.arnold_geom AS arnold_geom,
+--	road_case.arnold_shape AS arnold_shape
+--FROM shane_ch1_roads.osm_roads_add_lanes lanes
+--JOIN shane_ch1_roads.conflation_road_case road_case
+--	ON lanes.osm_road_name = road_case.osm_road_name 
+--AND ( ST_Intersects(st_startpoint(lanes.geom), st_startpoint(road_case.osm_geom))
+--	OR ST_Intersects(st_startpoint(lanes.geom), st_endpoint(road_case.osm_geom))
+--	OR ST_Intersects(st_endpoint(lanes.geom), st_startpoint(road_case.osm_geom))
+--	OR ST_Intersects(st_endpoint(lanes.geom), st_endpoint(road_case.osm_geom))
+--)
+--WHERE lanes.osm_id NOT IN (
+--	SELECT osm_id
+--	FROM shane_ch1_roads.conflation_road_case
+--); -- count: 15
 
 	
 -- check point -- 
-SELECT * FROM shane_ch1_roads.conflation_road_case -- count: 121
+SELECT * FROM shane_ch1_roads.conflation_road_case -- count: 449
