@@ -102,7 +102,23 @@ WHERE osm_id NOT IN (
 );
 
 
-	
+
+
+-- we have osm roads that dont have lane info, so for this we will imply they have 1 lane (because they should at least have 1)
+-- and we will try to check to see if any of these roads conflate
+--INSERT INTO shane_ch1_roads.osm_roads_add_lanes(osm_id, osm_road_name, lanes, geom)
+--SELECT 
+--	osm_id,
+--	name AS osm_road_name,
+--	1 AS lanes,
+--	geom
+--FROM shane_ch1_roads.osm_roads
+--WHERE osm_id NOT IN (
+--    SELECT osm_id FROM shane_ch1_roads.osm_roads_add_lanes
+--);
+
+
+
 	
 -- conflates osm roads to arnold roads based on parallel and buffer intersection (the buffer is scaled by the lane count from osm)
 CREATE TABLE shane_ch1_roads.conflation_road_case AS 
