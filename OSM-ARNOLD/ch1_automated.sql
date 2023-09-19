@@ -53,7 +53,7 @@ BEGIN
 	);
 
 	-- imported database table --
-	CREATE TEMP TABLE imported_data AS (
+	CREATE TEMP TABLE arnold_lines AS (
 		SELECT *
  		FROM shane_data_setup.arnold_lines --------- CHANGE this TO be MORE flexible
 		WHERE geom && bb
@@ -156,48 +156,48 @@ BEGIN
 	CREATE TABLE ch1_automated.road_conflation AS 
 	WITH ranked_roads AS (
 		SELECT 
-		imported_data.route_id AS imported_data_id, 
-		imported_data.shape AS imported_data_shape,
+		arnold.route_id AS arnold_route_id, 
+		arnold.shape AS arnold_shape,
 		osm.osm_id AS osm_id, 
 		osm.lanes AS lanes, 
 		osm.osm_road_name AS osm_road_name,  
 		osm.geom AS osm_geom,
-		ST_LineSubstring( imported_data.geom, LEAST(ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_startpoint(osm.geom), imported_data.geom)), 
-			ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_endpoint(osm.geom), imported_data.geom))), GREATEST(ST_LineLocatePoint(imported_data.geom,
-			ST_ClosestPoint(st_startpoint(osm.geom), imported_data.geom)) , ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_endpoint(osm.geom), 
-			imported_data.geom))) ) AS seg_geom,
+		ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
+			ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom,
+			ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), 
+			arnold.geom))) ) AS seg_geom,
 		ROW_NUMBER() OVER (
 	    	PARTITION BY osm.geom
 	        ORDER BY 
-	        ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4), ST_Buffer(imported_data.geom, 1))) DESC
+	        ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4), ST_Buffer(arnold.geom, 1))) DESC
 	        ) AS RANK,
-	    ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(imported_data.geom, 1)) AS intersection_geom,
-	    ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(imported_data.geom, 1))) AS overlap_area
+	    ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(arnold.geom, 1)) AS intersection_geom,
+	    ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(arnold.geom, 1))) AS overlap_area
 		FROM osm_roads_add_lanes AS osm
-		RIGHT JOIN imported_data AS imported_data
-		ON ST_Intersects(ST_buffer(osm.geom, (osm.lanes) * 2), imported_data.geom)
-		WHERE (  ABS(DEGREES(ST_Angle(ST_LineSubstring( imported_data.geom, LEAST(ST_LineLocatePoint(imported_data.geom, 
-			ST_ClosestPoint(st_startpoint(osm.geom), imported_data.geom)) , ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_endpoint(osm.geom), imported_data.geom))),
-			GREATEST(ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_startpoint(osm.geom), imported_data.geom)) , ST_LineLocatePoint(imported_data.geom, 
-			ST_ClosestPoint(st_endpoint(osm.geom), imported_data.geom))) ), osm.geom))) BETWEEN 0 AND 10 -- 0 
-		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( imported_data.geom,
-			LEAST(ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_startpoint(osm.geom), imported_data.geom)) , ST_LineLocatePoint(imported_data.geom, 
-			ST_ClosestPoint(st_endpoint(osm.geom), imported_data.geom))), GREATEST(ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_startpoint(osm.geom),
-			imported_data.geom)) , ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_endpoint(osm.geom), imported_data.geom))) ), osm.geom))) BETWEEN 170 AND 190 -- 180
-		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( imported_data.geom, LEAST(ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_startpoint(osm.geom), imported_data.geom)),
-			ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_endpoint(osm.geom), imported_data.geom))), 
-			GREATEST(ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_startpoint(osm.geom), imported_data.geom)), 
-			ST_LineLocatePoint(imported_data.geom, ST_ClosestPoint(st_endpoint(osm.geom), imported_data.geom))) ), osm.geom))) BETWEEN 350 AND 360 ) -- 360
+		RIGHT JOIN arnold_lines AS arnold
+		ON ST_Intersects(ST_buffer(osm.geom, (osm.lanes) * 2), arnold.geom)
+		WHERE (  ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, 
+			ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))),
+			GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, 
+			ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 0 AND 10 -- 0 
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom,
+			LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, 
+			ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom),
+			arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 170 AND 190 -- 180
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)),
+			ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), 
+			GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
+			ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 350 AND 360 ) -- 360
 	)
 	SELECT
 		osm_id,
 		osm_road_name,
 		lanes,
 		osm_geom,
-		imported_data_id,
+		arnold_route_id,
 		RANK,
-		seg_geom AS imported_data_geom,
-		imported_data_shape AS imported_data_shape,
+		seg_geom AS arnold_geom,
+		arnold_shape AS arnold_shape,
 		intersection_geom,
 		overlap_area
 	FROM ranked_roads
@@ -272,24 +272,24 @@ BEGIN
 		osm_label TEXT,
 		osm_id INT8,
 		osm_geom GEOMETRY(LineString, 3857),
-		imported_data_id VARCHAR(75),
-		imported_data_geom GEOMETRY(LineString, 3857)
+		arnold_route_id VARCHAR(75),
+		arnold_geom GEOMETRY(LineString, 3857)
 	);
 	
 	INSERT INTO ch1_automated.crossing_conflation (
 		osm_label, 
 		osm_id, 
 		osm_geom, 
-		imported_data_id, 
-		imported_data_geom
+		arnold_route_id, 
+		arnold_geom
 	) SELECT DISTINCT ON (crossing.osm_id, road.route_id)
 		'crossing' AS osm_label,
 		crossing.osm_id AS osm_id, 
 		crossing.geom AS osm_geom,
-		road.route_id AS imported_data_id,
-		road.geom AS imported_data_geom
+		road.route_id AS arnold_route_id,
+		road.geom AS arnold_geom
 	FROM osm_crossing AS crossing
-	JOIN imported_data AS road 
+	JOIN arnold_lines AS road 
 		ON ST_Intersects(crossing.geom, road.geom);
 		
 		
@@ -298,14 +298,14 @@ BEGIN
 		osm_label, 
 		osm_id, 
 		osm_geom, 
-		imported_data_id, 
-		imported_data_geom
-	) SELECT DISTINCT ON (crossing.osm_id, road.imported_data_id) 
+		arnold_route_id, 
+		arnold_geom
+	) SELECT DISTINCT ON (crossing.osm_id, road.arnold_route_id) 
 		'crossing' AS osm_label,
 		crossing.osm_id AS osm_id, 
 		crossing.geom AS osm_geom,
-		road.imported_data_id AS imported_data_id,
-		road.imported_data_geom AS imported_data_geom
+		road.arnold_route_id AS arnold_route_id,
+		road.arnold_geom AS arnold_geom
 	FROM osm_crossing AS crossing
 	JOIN ch1_automated.road_conflation AS road
 		ON ST_Intersects(crossing.geom, road.osm_geom)
@@ -347,8 +347,8 @@ BEGIN
 		osm_cl_geom GEOMETRY(LineString, 3857),
 		osm_crossing_id INT8,
 		osm_crossing_geom GEOMETRY(LineString, 3857),
-		imported_data_id VARCHAR(75),
-		imported_data_geom GEOMETRY(LineString, 3857)
+		arnold_route_id VARCHAR(75),
+		arnold_geom GEOMETRY(LineString, 3857)
 	);
 
 	INSERT INTO ch1_automated.connecting_link_conflation (
@@ -357,16 +357,16 @@ BEGIN
 		osm_cl_geom, 
 		osm_crossing_id, 
 		osm_crossing_geom, 
-		imported_data_id, 
-		imported_data_geom
-	) SELECT DISTINCT ON (cl.osm_id, crossing.imported_data_id)
+		arnold_route_id, 
+		arnold_geom
+	) SELECT DISTINCT ON (cl.osm_id, crossing.arnold_route_id)
 	    'connecting link' AS osm_label,
 	    cl.osm_id AS osm_cl_id,
 	    cl.geom AS osm_cl_geom,
 	    crossing.osm_id AS osm_crossing_id,
 	    crossing.osm_geom AS osm_crossing_geom,
-	    crossing.imported_data_id AS imported_data_id,
-	    crossing.imported_data_geom AS imported_data_geom
+	    crossing.arnold_route_id AS arnold_route_id,
+	    crossing.arnold_geom AS arnold_geom
 	FROM osm_connecting_links AS cl
 	JOIN ch1_automated.crossing_conflation AS crossing
 	    ON ST_Intersects(cl.geom, crossing.osm_geom); 
@@ -378,16 +378,16 @@ BEGIN
 		osm_cl_geom, 
 		osm_crossing_id, 
 		osm_crossing_geom, 
-		imported_data_id, 
-		imported_data_geom
-	) SELECT DISTINCT ON (cl.osm_id, crossing.imported_data_id)
+		arnold_route_id, 
+		arnold_geom
+	) SELECT DISTINCT ON (cl.osm_id, crossing.arnold_route_id)
 	    'connecting link' AS osm_label,
 	    cl.osm_id AS osm_cl_id,
 	    cl.geom AS osm_cl_geom,
 	    crossing.osm_id AS osm_crossing_id,
 	    crossing.osm_geom AS osm_crossing_geom,
-	    crossing.imported_data_id AS imported_data_id,
-	    crossing.imported_data_geom AS imported_data_geom
+	    crossing.arnold_route_id AS arnold_route_id,
+	    crossing.arnold_geom AS arnold_geom
 	FROM osm_footway_null_connecting_links AS cl
 	JOIN ch1_automated.crossing_conflation AS crossing
 	    ON ST_Intersects(cl.geom, crossing.osm_geom);
@@ -408,8 +408,8 @@ BEGIN
 		SELECT
 			sw.osm_id AS osm_id,
 			sw.geom AS osm_geom,
-			road.route_id AS imported_data_id,
-			road.geom AS imported_data_geom,
+			road.route_id AS arnold_route_id,
+			road.geom AS arnold_geom,
 			-- finds the closest points on the road linestring to the start and end point of the sw geom and extracts the corresponding 
 			-- subseciton of the road as its own distinct linestring. 
 		  	ST_LineSubstring( road.geom, LEAST( ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_startpoint(sw.geom), road.geom)), 
@@ -431,7 +431,7 @@ BEGIN
 		  			)
 		  	) AS RANK
 		FROM osm_sw AS sw
-		JOIN imported_data AS road 
+		JOIN arnold_lines AS road 
 			ON ST_Intersects(ST_Buffer(sw.geom, 5), ST_Buffer(road.geom, 18))
 		WHERE (
 			--  calculates the angle between a road line segment and sw line segment and checks if parallel -> angle ~ 0, 180, or 360
@@ -452,12 +452,12 @@ BEGIN
 		'sidewalk' AS osm_label,
 	  	osm_id,
 	  	osm_geom,
-	  	imported_data_id,
-	  	seg_geom AS imported_data_geom,
+	  	arnold_route_id,
+	  	seg_geom AS arnold_geom,
 	  	ST_Intersection(ST_Buffer(osm_geom, 4), ST_Buffer(seg_geom, 20)) AS intersection_geom,
 	    ST_Area(ST_Intersection(ST_Buffer(osm_geom, 4), ST_Buffer(seg_geom, 20))) AS overlap_area,
-	    ST_Buffer(seg_geom, 20) AS imported_data_shape,
-	    ST_Area(ST_Buffer(seg_geom, 20)) AS imported_data_area,
+	    ST_Buffer(seg_geom, 20) AS arnold_shape,
+	    ST_Area(ST_Buffer(seg_geom, 20)) AS arnold_area,
 	    ST_Buffer(osm_geom, 4) AS osm_shape,
 	    ST_Area(ST_Buffer(osm_geom, 4)) AS osm_area
 	FROM  ranked_roads
@@ -484,10 +484,10 @@ BEGIN
 		osm_label TEXT,
 	    osm_id INT8,
 	    osm_geom GEOMETRY(LineString, 3857),
-	    imported_data_road1_id VARCHAR(75),
-	    imported_data_road1_geom GEOMETRY(LineString, 3857),
-	    imported_data_road2_id VARCHAR(75),
-	    imported_data_road2_geom GEOMETRY(LineString, 3857)
+	    arnold_road1_route_id VARCHAR(75),
+	    arnold_road1_geom GEOMETRY(LineString, 3857),
+	    arnold_road2_route_id VARCHAR(75),
+	    arnold_road2_geom GEOMETRY(LineString, 3857)
 	);
 	
 
@@ -495,18 +495,18 @@ BEGIN
 		osm_label, 
 		osm_id, 
 		osm_geom, 
-		imported_data_road1_id, 
-		imported_data_road1_geom,
-		imported_data_road2_id, 
-		imported_data_road2_geom
+		arnold_road1_route_id, 
+		arnold_road1_geom,
+		arnold_road2_route_id, 
+		arnold_road2_geom
 	) SELECT
 		'corner'AS osm_label,
 	    sw.osm_id AS osm_id,
 	    sw.geom AS osm_geom,
-	    conflated_sw1.imported_data_id AS imported_data_road1_id,
-	    conflated_sw1.imported_data_geom AS imported_data_road1_geom, 
-	    conflated_sw2.imported_data_id AS imported_data_road2_id,
-	    conflated_sw2.imported_data_geom AS imported_data_road2_geom
+	    conflated_sw1.arnold_route_id AS arnold_road1_route_id,
+	    conflated_sw1.arnold_geom AS arnold_road1_geom, 
+	    conflated_sw2.arnold_route_id AS arnold_road2_route_id,
+	    conflated_sw2.arnold_geom AS arnold_road2_geom
 	FROM osm_sw AS sw
 	JOIN ch1_automated.sidewalk_conflation AS conflated_sw1
 	    ON ST_Intersects(ST_StartPoint(sw.geom), conflated_sw1.osm_geom)
@@ -518,7 +518,7 @@ BEGIN
 	) AND (
 		conflated_sw1.osm_id != conflated_sw2.osm_id
 	) AND (
-		conflated_sw1.imported_data_id != conflated_sw2.imported_data_id
+		conflated_sw1.arnold_route_id != conflated_sw2.arnold_route_id
 	) AND ( 
 		ST_Length(sw.geom) < 12
 	); 
@@ -574,11 +574,11 @@ BEGIN
 	CREATE TABLE ch1_automated.weird_connecting_link_conflation AS
 		WITH connlink_rn AS (
 			SELECT DISTINCT ON 
-				( link.osm_id, link.osm_segment_number, crossing.imported_data_id )  
+				( link.osm_id, link.osm_segment_number, crossing.arnold_route_id )  
 				link.osm_id AS osm_cl_id, 
 				link.osm_segment_number, 
-				crossing.imported_data_id AS imported_data_id, 
-				crossing.imported_data_geom AS imported_data_geom,
+				crossing.arnold_route_id AS arnold_route_id, 
+				crossing.arnold_geom AS arnold_geom,
 				link.geom AS osm_geom, 
 				crossing.osm_geom AS cross_geom
 		    FROM ch1_automated.crossing_conflation AS crossing
@@ -590,8 +590,8 @@ BEGIN
 			osm_cl_id, 
 			osm_segment_number, 
 			osm_geom, 
-			imported_data_id, 
-			imported_data_geom
+			arnold_route_id, 
+			arnold_geom
 		FROM connlink_rn;
 		
 		
@@ -601,7 +601,7 @@ BEGIN
 	WITH ranked_roads AS (
 		SELECT
 			sidewalk.osm_id AS osm_id,
-		  	big_road.route_id AS imported_data_id,
+		  	big_road.route_id AS arnold_route_id,
 		  	sidewalk.geom AS osm_geom,
 		  	sidewalk.osm_segment_number AS osm_segment_number,
 		 	-- the road segments that the sidewalk is conflated to
@@ -619,7 +619,7 @@ BEGIN
 		  			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom )
 		  	) AS RANK
 		FROM weird_case_segments AS sidewalk
-		JOIN imported_data AS big_road ON ST_Intersects(ST_Buffer(sidewalk.geom, 5), ST_Buffer(big_road.geom, 18))
+		JOIN arnold_lines AS big_road ON ST_Intersects(ST_Buffer(sidewalk.geom, 5), ST_Buffer(big_road.geom, 18))
 		WHERE (
 			ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), 
 				big_road.geom)) , ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))),
@@ -645,8 +645,8 @@ BEGIN
 	  	osm_id,
 	  	osm_segment_number,
 	  	osm_geom,
-	  	imported_data_id,
-	  	seg_geom AS imported_data_geom
+	  	arnold_route_id,
+	  	seg_geom AS arnold_geom
 	FROM ranked_roads
 	WHERE rank = 1
 	ORDER BY osm_id, osm_segment_number;
@@ -660,23 +660,23 @@ BEGIN
 	
 	-- in the case where a connecting link segment and general case segment are both conflated and share the same osm_id, the segments in between that
 	-- are NOT conflated will inherit the road conflation the conflated sidewalk and connecting link share. 
-	INSERT INTO ch1_automated.weird_sidewalk_conflation (osm_label, osm_id, osm_segment_number, imported_data_id, osm_geom, imported_data_geom)
+	INSERT INTO ch1_automated.weird_sidewalk_conflation (osm_label, osm_id, osm_segment_number, arnold_route_id, osm_geom, arnold_geom)
 	WITH min_max_segments AS (
 		SELECT 
 			sw.osm_id, 
 			MIN(LEAST(sw.osm_segment_number, link.osm_segment_number)) AS min_segment, 
 			MAX(GREATEST(sw.osm_segment_number, link.osm_segment_number)) AS max_segment, 
-			sw.imported_data_id
+			sw.arnold_route_id
 		FROM ch1_automated.weird_sidewalk_conflation AS sw
 		JOIN ch1_automated.weird_connecting_link_conflation AS link
-			ON sw.osm_id = link.osm_cl_id AND sw.imported_data_id = link.imported_data_id
-		GROUP BY sw.osm_id, sw.imported_data_id
+			ON sw.osm_id = link.osm_cl_id AND sw.arnold_route_id = link.arnold_route_id
+		GROUP BY sw.osm_id, sw.arnold_route_id
 	)
 	SELECT 
 		'sidewalk' AS osm_label,
 		seg_sw.osm_id, 
 		seg_sw.osm_segment_number,  
-		mms.imported_data_id, 
+		mms.arnold_route_id, 
 		seg_sw.geom,
 		ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)) ,
 			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom,
@@ -685,8 +685,8 @@ BEGIN
 	FROM weird_case_segments AS seg_sw
 	JOIN min_max_segments AS mms 
 		ON seg_sw.osm_id = mms.osm_id
-	JOIN imported_data AS road
-		ON mms.imported_data_id = road.route_id
+	JOIN arnold_lines AS road
+		ON mms.arnold_route_id = road.route_id
 	WHERE seg_sw.osm_segment_number BETWEEN mms.min_segment AND mms.max_segment
 	AND (seg_sw.osm_id, seg_sw.osm_segment_number) NOT IN (
 		SELECT 
@@ -706,21 +706,21 @@ BEGIN
 		
 	-- conflates the weird case segments that are between 2 different weird case segments that conflated to the same road, giving all the roads
 	-- in between that road conflation as well. 
-	INSERT INTO ch1_automated.weird_sidewalk_conflation (osm_label, osm_id, osm_segment_number, imported_data_id, osm_geom, imported_data_geom)
+	INSERT INTO ch1_automated.weird_sidewalk_conflation (osm_label, osm_id, osm_segment_number, arnold_route_id, osm_geom, arnold_geom)
 	WITH min_max_segments AS (
 	  	SELECT 
 	  		osm_id, 
 	  		MIN(osm_segment_number) AS min_segment, 
 	  		MAX(osm_segment_number) AS max_segment, 
-	  		imported_data_id
+	  		arnold_route_id
 	  	FROM ch1_automated.weird_sidewalk_conflation
-	  	GROUP BY osm_id, imported_data_id
+	  	GROUP BY osm_id, arnold_route_id
 	)
 	SELECT 
 		'sidewalk' AS osm_label,
 		seg_sw.osm_id AS osm_id, 
 		seg_sw.osm_segment_number AS osm_segment_number, 
-		mms.imported_data_id AS imported_data_id, 
+		mms.arnold_route_id AS arnold_route_id, 
 		seg_sw.geom AS osm_geom,
 		ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)),
 			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))), 
@@ -729,8 +729,8 @@ BEGIN
 	FROM weird_case_segments AS seg_sw
 	JOIN min_max_segments AS mms 
 		ON seg_sw.osm_id = mms.osm_id
-	JOIN imported_data AS road
-		ON mms.imported_data_id = road.route_id
+	JOIN arnold_lines AS road
+		ON mms.arnold_route_id = road.route_id
 	WHERE seg_sw.osm_segment_number BETWEEN mms.min_segment AND mms.max_segment
 	AND (seg_sw.osm_id, seg_sw.osm_segment_number) NOT IN (
 		SELECT osm_id, osm_segment_number
@@ -745,12 +745,12 @@ BEGIN
 	
 	
 	-- conflate sidewalks that are parallel to the already conflated sidewalk
-	INSERT INTO ch1_automated.weird_sidewalk_conflation (osm_label, osm_id, osm_segment_number, imported_data_id, osm_geom, imported_data_geom)
+	INSERT INTO ch1_automated.weird_sidewalk_conflation (osm_label, osm_id, osm_segment_number, arnold_route_id, osm_geom, arnold_geom)
 	WITH ranked_road AS (
 		SELECT DISTINCT 
 			osm_sw.osm_id AS osm_id, 
 			osm_sw.osm_segment_number AS osm_segment_number, 
-			sidewalk.imported_data_id AS imported_data_id, 
+			sidewalk.arnold_route_id AS arnold_route_id, 
 			osm_sw.osm_geom AS osm_geom,
 			ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(osm_sw.osm_geom), big_road.geom)),
 				ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(osm_sw.osm_geom), big_road.geom))), 
@@ -773,7 +773,7 @@ BEGIN
 			OR ST_Intersects(st_startpoint(sidewalk.osm_geom), st_endpoint(osm_sw.osm_geom))
 			OR ST_Intersects(st_endpoint(sidewalk.osm_geom), st_startpoint(osm_sw.osm_geom))
 			OR ST_Intersects(st_endpoint(sidewalk.osm_geom), st_endpoint(osm_sw.osm_geom))
-		JOIN imported_data AS big_road
+		JOIN arnold_lines AS big_road
 			ON ST_Intersects(ST_Buffer(osm_sw.osm_geom, 5), ST_Buffer(osm_sw.osm_geom, 18))
 		WHERE (osm_sw.osm_id, osm_sw.osm_segment_number) NOT IN (
 			SELECT sw.osm_id, sw.osm_segment_number FROM ch1_automated.weird_sidewalk_conflation AS sw
@@ -783,15 +783,15 @@ BEGIN
 			ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.osm_geom))) BETWEEN 0 AND 20 -- 0 
 			OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.osm_geom))) BETWEEN 160 AND 200 -- 180
 			OR ABS(DEGREES(ST_Angle(sidewalk.osm_geom, osm_sw.osm_geom))) BETWEEN 340 AND 360  ) -- 360 
-			AND big_road.route_id = sidewalk.imported_data_id
+			AND big_road.route_id = sidewalk.arnold_route_id
 	)
 	SELECT 
 		'sidewalk' AS osm_label,
 		osm_id, 
 		osm_segment_number, 
-		imported_data_id, 
+		arnold_route_id, 
 		osm_geom, 
-		seg_geom AS imported_data_geom
+		seg_geom AS arnold_geom
 	FROM ranked_road
 	WHERE RANK = 1;
 	
@@ -804,21 +804,21 @@ BEGIN
 	CREATE TABLE ch1_automated.weird_corner_conflation AS
 		SELECT  corner.osm_id AS osm_id,
 				corner.osm_segment_number AS osm_segment_number,
-				road1.imported_data_id AS imported_data_road1_id,
-				road2.imported_data_id AS imported_data_road2_id,
+				road1.arnold_route_id AS arnold_road1_route_id,
+				road2.arnold_route_id AS arnold_road2_route_id,
 				corner.geom AS osm_geom
 		FROM weird_case_segments AS corner
 		JOIN (	SELECT * 
 				FROM ch1_automated.weird_sidewalk_conflation
 				UNION ALL
-				SELECT osm_label, osm_id, 0 AS osm_segment_number, osm_geom, imported_data_id, imported_data_geom
+				SELECT osm_label, osm_id, 0 AS osm_segment_number, osm_geom, arnold_route_id, arnold_geom
 				FROM ch1_automated.sidewalk_conflation
 			 ) road1
 			ON st_intersects(st_startpoint(corner.geom), road1.osm_geom)
 		JOIN (  SELECT * 
 				FROM ch1_automated.weird_sidewalk_conflation
 				UNION ALL
-				SELECT osm_label, osm_id, 0 AS osm_segment_number, osm_geom, imported_data_id, imported_data_geom
+				SELECT osm_label, osm_id, 0 AS osm_segment_number, osm_geom, arnold_route_id, arnold_geom
 				FROM ch1_automated.sidewalk_conflation
 			 ) road2
 			ON st_intersects(st_endpoint(corner.geom), road2.osm_geom)
@@ -828,7 +828,7 @@ BEGIN
 						SELECT link.osm_cl_id, link.osm_segment_number FROM ch1_automated.weird_connecting_link_conflation AS link
 					)
 				AND ST_Equals(road1.osm_geom, road2.osm_geom) IS FALSE
-				AND road1.imported_data_id != road2.imported_data_id;
+				AND road1.arnold_route_id != road2.arnold_route_id;
 
 	
 END $$;
