@@ -1,10 +1,15 @@
--- INSERT DOCUMENTATION HERE --
+-- THIS CODE IS THE CONFLATION PROCESS BETWEEN OSM ROADS AND SIDEWALKS TO ARNOLD ROADS --
 
 
+
+-- Initializing the data into distinct categorical tables based on geometry
+-- to be used in separate conflation processes and methods 
+-- while also confining the scope of the geometries to a specified bounding box
 CREATE OR REPLACE PROCEDURE initialize_data_to_bb()
 LANGUAGE plpgsql AS $$
 DECLARE
 
+	-- The current code is set to a bounding box that of Capital Hill Seattle, WA
 	bb box2d := st_setsrid( st_makebox2d( st_makepoint(-13617414,6042417), st_makepoint(-13614697,6045266)), 3857);
 
 BEGIN
@@ -43,6 +48,8 @@ BEGIN
 	);
 	
 	-- OSM footway NULL --
+	-- this is created after discovering there were valid sidewalk and/or crossing data with the tag for it being NULL
+	-- thus meaning they would not be included and conflated if not included in this table here
 	CREATE TEMP TABLE osm_footway_null AS (
 		SELECT *
 		FROM shane_data_setup.osm_lines
@@ -52,10 +59,10 @@ BEGIN
 				geom && bb
 	);
 
-	-- imported database table --
+	-- ARNOLD roads --
 	CREATE TEMP TABLE arnold_lines AS (
 		SELECT *
- 		FROM shane_data_setup.arnold_lines --------- CHANGE this TO be MORE flexible
+ 		FROM shane_data_setup.arnold_lines 
 		WHERE geom && bb
 	);
 
@@ -65,6 +72,9 @@ END $$;
 
 
 
+-- Creates a new OSM roads table adding a column for lane count by extracting the lane data from the tags column when provided.
+-- It then also optimizes data efficiency by checking for applicable lane data assumption. 
+-- This is done by assuming lane data for roads so long as the road is connected to another road that was given a value in the lane column 
 CREATE OR REPLACE PROCEDURE osm_road_add_lane_data()
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -73,7 +83,7 @@ DECLARE
 	_res_cnt int;
 
 BEGIN
-
+	
 	CREATE TEMP TABLE osm_roads_add_lanes AS (
 		SELECT 
 			osm_id, 
@@ -84,9 +94,9 @@ BEGIN
 		WHERE tags ? 'lanes' 
 	);
 
+	-- NOTE: This process is looped as we can continue to assume lane data until there are no roads without lane count connected to ones that do
 	LOOP
 		
-		-- increment counter
 		_itr_cnt := _itr_cnt + 1;
 		
 		WITH ranked_road AS (
@@ -148,6 +158,9 @@ END $$;
 
 
 
+-- Creates the OSM roads to ARNOLD roads conflation table --
+-- For this process, we needed to segment arnold road geometries as they were often vastly larger than osm road geometries.
+-- This made it easier to find the association between osm and arnold geometries.
 CREATE OR REPLACE PROCEDURE road_to_road_conflation()
 LANGUAGE plpgsql AS $$
 
@@ -162,32 +175,46 @@ BEGIN
 		osm.lanes AS lanes, 
 		osm.osm_road_name AS osm_road_name,  
 		osm.geom AS osm_geom,
+		
+		-- segmentation of arnold road geometries 
 		ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
 			ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom,
 			ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), 
 			arnold.geom))) ) AS seg_geom,
+			
+		-- ranking of associations in order to pick out the top ones for conflation
+		-- ranking is done based on the amount of buffer overlap between OSM and ARNOLD roads
+			-- buffer is based on the average lane width in meters and OSM roads are scaled by their lane count data
 		ROW_NUMBER() OVER (
 	    	PARTITION BY osm.geom
 	        ORDER BY 
 	        ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4), ST_Buffer(arnold.geom, 1))) DESC
 	        ) AS RANK,
+	        
+	    
 	    ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(arnold.geom, 1)) AS intersection_geom,
 	    ST_Area(ST_Intersection(ST_Buffer(osm.geom, lanes * 4 ), ST_Buffer(arnold.geom, 1))) AS overlap_area
 		FROM osm_roads_add_lanes AS osm
 		RIGHT JOIN arnold_lines AS arnold
+		
+		-- joins where buffer overlap
 		ON ST_Intersects(ST_buffer(osm.geom, (osm.lanes) * 2), arnold.geom)
-		WHERE (  ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, 
-			ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))),
+		
+		-- joins where angle similarity is within a threshold of being parallel
+		-- threshold is set to 10 degrees
+		WHERE (  
+			ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), 
+			arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))),
 			GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, 
-			ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 0 AND 10 -- 0 
-		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom,
-			LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, 
-			ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom),
-			arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 170 AND 190 -- 180
-		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)),
-			ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), 
-			GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), 
-			ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 350 AND 360 ) -- 360
+			ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 0 AND 10 -- 0 degrees  
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), 
+			arnold.geom)) , ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), 
+			GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)) , ST_LineLocatePoint(arnold.geom, 
+			ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 170 AND 190 -- 180 degrees
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( arnold.geom, LEAST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), 
+			arnold.geom)), ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))), 
+			GREATEST(ST_LineLocatePoint(arnold.geom, ST_ClosestPoint(st_startpoint(osm.geom), arnold.geom)), ST_LineLocatePoint(arnold.geom, 
+			ST_ClosestPoint(st_endpoint(osm.geom), arnold.geom))) ), osm.geom))) BETWEEN 350 AND 360 ) -- 360 degrees
 	)
 	SELECT
 		osm_id,
@@ -201,6 +228,8 @@ BEGIN
 		intersection_geom,
 		overlap_area
 	FROM ranked_roads
+	
+	-- in some cases, we need to pick the top 2+ for conflation as some OSM roads are associated to more than 1 ARNOLD road
 	WHERE 
 		ST_Length(seg_geom) > 4
 	AND RANK = 1
@@ -220,7 +249,7 @@ END $$;
 
 
 
-
+-- do we need this? --
 CREATE OR REPLACE PROCEDURE entrance_conflation()
 LANGUAGE plpgsql AS $$
 
@@ -255,7 +284,7 @@ BEGIN
 		FROM osm_point AS point
 		WHERE tags -> 'entrance' IS NOT NULL
 	) AS point 
-		ON ST_intersects(sw.geom, point.geom); -- count: 1
+		ON ST_intersects(sw.geom, point.geom);
 	
 END $$;
 
@@ -263,6 +292,8 @@ END $$;
 
 
 
+-- Creates the OSM crossing to ARNOLD road conflation table --
+-- This process simply consists of if the OSM crossing geometry intersects with ARNOLD road geometry, they are associated
 CREATE OR REPLACE PROCEDURE crossing_to_road_conflation()
 LANGUAGE plpgsql AS $$
 
@@ -293,7 +324,9 @@ BEGIN
 		ON ST_Intersects(crossing.geom, road.geom);
 		
 		
-	-- insert crossings that conflate from the osm road conflation
+	-- insert crossings that conflate from the osm road conflation --
+	-- this helps conflate crossings that do not conflate with ARNOLD geometry directly, but can be associated based on how they
+	-- intersect with an OSM road that conflated to an ARNOLD road
 	INSERT INTO ch1_automated.crossing_conflation (
 		osm_label, 
 		osm_id, 
@@ -320,6 +353,11 @@ END $$;
 
 
 
+-- Creates the OSM connecting link to ARNOLD road conflation table --
+-- Connecting links are defined as OSM sidewalk segments that are small in size and intersect with an OSM sidewalk geometry at one endpoint 
+-- while also intersecting with an OSM crossing geometry at the other.
+-- Connecting links are associated to the road to which they connect to via crossing, therefore, they inherit the ARNOLD road association
+-- from the crossing they are connected to if that crossing is conflated.
 CREATE OR REPLACE PROCEDURE connecting_link_to_road_conflation()
 LANGUAGE plpgsql AS $$
 
@@ -333,6 +371,7 @@ BEGIN
 	    WHERE ST_Length(sw.geom) < 12
 	); 
 	
+	-- connecting links found in the null table
 	CREATE TEMP TABLE osm_footway_null_connecting_links AS (
 		SELECT DISTINCT fn.*
 		FROM osm_footway_null AS fn
@@ -398,6 +437,10 @@ END $$;
 
 
 
+-- Creates the OSM sidewalk to ARNOLD road conflation table -- 
+-- This process consists of ranking, buffer intersection, and angle similarity checks 
+-- For this process, we needed to segment arnold road geometries as they were often vastly larger than osm road geometries.
+-- This made it easier to find the association between osm and arnold geometries.
 CREATE OR REPLACE PROCEDURE sidewalk_to_road_conflation()
 LANGUAGE plpgsql AS $$
 
@@ -410,17 +453,22 @@ BEGIN
 			sw.geom AS osm_geom,
 			road.route_id AS arnold_route_id,
 			road.geom AS arnold_geom,
-			-- finds the closest points on the road linestring to the start and end point of the sw geom and extracts the corresponding 
-			-- subseciton of the road as its own distinct linestring. 
+			
+			
+			-- code that does the segmentation of arnold geometries 
 		  	ST_LineSubstring( road.geom, LEAST( ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_startpoint(sw.geom), road.geom)), 
 		  		ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_endpoint(sw.geom), road.geom))), 
 		  		GREATEST( ST_LineLocatePoint( road.geom, ST_ClosestPoint( st_startpoint(sw.geom), road.geom)), 
 		  		ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ) AS seg_geom,
-		  	-- calculate the coverage of sidewalk geom within the buffer of the road
+		  		
+		  		
+		  	-- calculate the amount of coverage made on the OSM sidewalk geometry buffer by the ARNOLD road buffer
 		  	ST_Length( ST_Intersection( sw.geom, ST_Buffer( ST_LineSubstring( road.geom, LEAST( ST_LineLocatePoint(road.geom, 
 		  		ST_ClosestPoint(st_endpoint(sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom, 
 		  		ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), 18))) / ST_Length(sw.geom) AS sw_coverage_bigroad,
-		  	--  calculates a ranking or sequential number for each row based on the distance between the sw and road geom.
+		  		
+		  		
+		  	--  ranking based on the distance between OSM sidewalk geometries and ARNOLD road geometries
 		  	ROW_NUMBER() OVER (
 		  		PARTITION BY sw.geom
 		  		ORDER BY 
@@ -430,20 +478,23 @@ BEGIN
 		  				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom)))), sw.geom
 		  			)
 		  	) AS RANK
+		  	
+		  	
 		FROM osm_sw AS sw
 		JOIN arnold_lines AS road 
 			ON ST_Intersects(ST_Buffer(sw.geom, 5), ST_Buffer(road.geom, 18))
 		WHERE (
-			--  calculates the angle between a road line segment and sw line segment and checks if parallel -> angle ~ 0, 180, or 360
+			-- joins where angle similarity is within a threshold of being parallel
+			-- threshold is set to 10 degrees
 			ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
 				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
 				GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)), 
 				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 0 AND 10 -- 0 
-			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
 				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
 				GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
 				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 170 AND 190 -- 180
-			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
+		OR ABS(DEGREES(ST_Angle(ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
 				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))),
 				GREATEST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(sw.geom), road.geom)),
 				ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(sw.geom), road.geom))) ), sw.geom))) BETWEEN 350 AND 360 ) -- 360
@@ -474,7 +525,10 @@ END $$;
 
 
 
-
+-- Creates the OSM corner to ARNOLD road conflation table --
+-- Corners are defined as OSM sidewalk segments which are small in size and represent where a corner is. 
+-- Geomtrically, this means that a corner segment is connected to 2 distinct sidewalk segements at each endpoint.
+-- Corners inherit the ARNOLD road associations of the 2 OSM sidewalks they are connected to.
 CREATE OR REPLACE PROCEDURE corner_to_road_conflation()
 LANGUAGE plpgsql AS $$
 
@@ -529,6 +583,8 @@ END $$;
 
 
 
+-- Creates a table of all OSM sidewalks that did not conflate from any of the above initial processes
+-- NOTE: crossings and roads are not included in this table
 CREATE OR REPLACE PROCEDURE weird_case_table()
 LANGUAGE plpgsql AS $$
 
@@ -552,13 +608,16 @@ END $$;
 
 
 
-
+-- Entire process for creating the weird case conflation tables for connecting links, corners, and sidewalks --
+-- This process is done by taking the osm sidewalk geometries that did not conflate (weird cases), breaking them up into smaller subsegments,
+-- and then checking to see if our own, smaller, segmentation can be associated to ARNOLD roads
+-- NOTE: segmentation maintains original OSM id, but we also add a column numbering the subsegment ie.) osm id 12345 can have segments 1,2,3,... etc.
 CREATE OR REPLACE PROCEDURE weird_case_conflation()
 LANGUAGE plpgsql AS $$
 
 BEGIN
 	
-	-- split the weird case linestrings into segments by linestring vertex
+	-- splitting OSM sidewalk linestring geometries, identified as weird cases, by vertex
 	CREATE TEMP TABLE weird_case_segments AS
 		WITH segments AS (
 			SELECT osm_id,
@@ -570,7 +629,7 @@ BEGIN
 		SELECT * FROM segments WHERE geom IS NOT NULL;
 		
 	
-	-- segments that are connecting links
+	-- applying the weird cases to connecting link conflation process
 	CREATE TABLE ch1_automated.weird_connecting_link_conflation AS
 		WITH connlink_rn AS (
 			SELECT DISTINCT ON 
@@ -596,7 +655,7 @@ BEGIN
 		
 		
 		
-	-- apply weird case segments to general case
+	-- applying the weird cases to sidewalk conflation
 	CREATE TABLE ch1_automated.weird_sidewalk_conflation AS
 	WITH ranked_roads AS (
 		SELECT
@@ -604,12 +663,14 @@ BEGIN
 		  	big_road.route_id AS arnold_route_id,
 		  	sidewalk.geom AS osm_geom,
 		  	sidewalk.osm_segment_number AS osm_segment_number,
-		 	-- the road segments that the sidewalk is conflated to
+		 	
+		  	-- segmentation of arnold road geometries
 		  	ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) ,
 		  		ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))),
 		  		GREATEST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) ,
 		  		ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ) AS seg_geom,
-		  	-- rank this based on the distance of the midpoint of the sidewalk to the midpoint of the road
+		  	
+		  	--  ranking based on the distance between OSM sidewalk geometries and ARNOLD road geometries
 		  	ROW_NUMBER() OVER (
 		  		PARTITION BY sidewalk.geom
 		  		ORDER BY ST_distance( ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom,
@@ -618,23 +679,27 @@ BEGIN
 		  			ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
 		  			ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom )
 		  	) AS RANK
+		  	
 		FROM weird_case_segments AS sidewalk
 		JOIN arnold_lines AS big_road ON ST_Intersects(ST_Buffer(sidewalk.geom, 5), ST_Buffer(big_road.geom, 18))
 		WHERE (
-			ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), 
-				big_road.geom)) , ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))),
-				GREATEST(ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) ,
-				ST_LineLocatePoint(big_road.geom, ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 0 AND 10 -- 0 
+			-- joins where angle similarity is within a threshold of being parallel
+			-- threshold is set to 10 degrees
+			ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom, 
+				ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom, 
+				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))), GREATEST(ST_LineLocatePoint(big_road.geom, 
+				ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom, 
+				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 0 AND 10 -- 0 degrees
 			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom,
 				ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
 				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))), GREATEST(ST_LineLocatePoint(big_road.geom,
 				ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
-				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 170 AND 190 -- 180
+				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 170 AND 190 -- 180 degrees
 			OR ABS(DEGREES(ST_Angle(ST_LineSubstring( big_road.geom, LEAST(ST_LineLocatePoint(big_road.geom,
 				ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
 				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))), GREATEST(ST_LineLocatePoint(big_road.geom,
 				ST_ClosestPoint(st_startpoint(sidewalk.geom), big_road.geom)) , ST_LineLocatePoint(big_road.geom,
-				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 350 AND 360 ) -- 360
+				ST_ClosestPoint(st_endpoint(sidewalk.geom), big_road.geom))) ), sidewalk.geom))) BETWEEN 350 AND 360 ) -- 360 degrees
 	    AND (sidewalk.osm_id, sidewalk.osm_segment_number) NOT IN (
 	    	SELECT osm_cl_id, osm_segment_number
 	      	FROM ch1_automated.weird_connecting_link_conflation
@@ -651,13 +716,8 @@ BEGIN
 	WHERE rank = 1
 	ORDER BY osm_id, osm_segment_number;
 	
-	
-	
-		
-		
-	
-	
-	
+
+
 	-- in the case where a connecting link segment and general case segment are both conflated and share the same osm_id, the segments in between that
 	-- are NOT conflated will inherit the road conflation the conflated sidewalk and connecting link share. 
 	INSERT INTO ch1_automated.weird_sidewalk_conflation (osm_label, osm_id, osm_segment_number, arnold_route_id, osm_geom, arnold_geom)
@@ -678,7 +738,7 @@ BEGIN
 		seg_sw.osm_segment_number,  
 		mms.arnold_route_id, 
 		seg_sw.geom,
-		ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)) ,
+		ST_LineSubstring( road.geom, LEAST(ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)),
 			ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom), road.geom))), GREATEST(ST_LineLocatePoint(road.geom,
 			ST_ClosestPoint(st_startpoint(seg_sw.geom), road.geom)) , ST_LineLocatePoint(road.geom, ST_ClosestPoint(st_endpoint(seg_sw.geom),
 			road.geom))) ) AS seg_geom
@@ -800,7 +860,7 @@ BEGIN
 	
 	
 	
-	-- Step 3: Deal with corner
+	-- weid case corner conflation
 	CREATE TABLE ch1_automated.weird_corner_conflation AS
 		SELECT  corner.osm_id AS osm_id,
 				corner.osm_segment_number AS osm_segment_number,
@@ -877,3 +937,4 @@ SELECT * FROM ch1_automated.corner_conflation;
 SELECT * FROM ch1_automated.weird_connecting_link_conflation;
 SELECT * FROM ch1_automated.weird_sidewalk_conflation;
 SELECT * FROM ch1_automated.weird_corner_conflation;
+
