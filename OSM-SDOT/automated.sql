@@ -679,7 +679,7 @@ BEGIN
 	-- create a table with metrics
 	-- GROUP BY sdot_objectid, the SUM the length of the conflated sdot divided by the length of the original sdot
 	-- This will give us how much of the sdot got conflated
-	CREATE TEMP TABLE sdot2osm_metrics_sdot AS
+	CREATE TABLE automated.sdot2osm_metrics_sdot AS
 		SELECT  
 			sdot.objectid,
 			COALESCE(SUM(ST_Length(sdot2osm.conflated_sdot_seg))/ST_Length(sdot.geom), 0) AS percent_conflated,
@@ -712,7 +712,7 @@ BEGIN
 	-- create a table with metrics
 	-- GROUP BY osm_id, the SUM the length of the conflated osm divided by the length of the original osm
 	-- This will give us how much of the osm got conflated
-	CREATE TEMP TABLE sdot2osm_metrics_osm AS
+	CREATE TABLE automated.sdot2osm_metrics_osm AS
 		SELECT  
 			osm.osm_id,
 			COALESCE(SUM(ST_Length(sdot2osm.conflated_osm_seg))/ST_Length(osm.geom), 0) AS percent_conflated,
@@ -906,4 +906,3 @@ END $$;
 
 
 CALL main();
-
