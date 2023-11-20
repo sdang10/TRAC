@@ -16,6 +16,9 @@ DECLARE
 	-- defined bounding box
 	bb box2d := st_setsrid( st_makebox2d( st_makepoint(-13632381,6008135), st_makepoint(-13603222,6066353)), 3857);
 
+	-- defined boundary buffer
+	buffer int8 = 15;
+
 BEGIN 
 	
 	-- OSM sidewalk
@@ -58,19 +61,19 @@ BEGIN
 					SELECT wkb_geometry
 					FROM sdot.censustract
 				)
-			), 15
+			), buffer
 		) AS geom;
  
 	CREATE INDEX bound_geom ON sdot_boundary USING GIST (geom);
 
 
 
-	-- OSM boundary
+	-- OSM data within SDOT boundary
 	CREATE TEMP TABLE osm_sw_in_boundary AS
 	SELECT DISTINCT sw.*
 	FROM osm_sidewalk AS sw
 	JOIN sdot_boundary AS b
-	ON ST_Intersects(b.geom, sw.way);
+	ON ST_Intersects(b.geom, sw.geom);
 
 
 
@@ -88,8 +91,7 @@ BEGIN
 		-- pulling only the SDOT data pertaining to sidewalk geometries that exist/have data within the defined bounding box
 		WHERE st_astext(wkb_geometry) != 'LINESTRING EMPTY'
 			AND surftype != 'UIMPRV'
-			AND sw_width != 0
-			AND wkb_geometry && bb;
+			AND sw_width != 0;
 		
 	-- better naming convention
 	CREATE INDEX sdot_geom ON sdot_sidewalk USING GIST (geom);
@@ -387,6 +389,9 @@ BEGIN
 		FROM osm_sidewalk
 		WHERE NOT ST_IsClosed(geom)
 	);
+
+	
+	CREATE INDEX osm_geom ON osm_sidewalk_preprocessed USING GIST (geom);
 	
 	
 	
@@ -734,7 +739,7 @@ BEGIN
 	
 	
 	
-	
+	-- necessary data pulled from the preprocessed data
 	CREATE TEMP TABLE sidewalk AS
 		SELECT 
 			osm_id,
@@ -751,27 +756,28 @@ BEGIN
 			hstore(CAST('cross_slope' AS TEXT), CAST(cross_slope AS TEXT)) AS cross_slope,
 			sw_category AS sdot_sw_category,
 			conflated_score,
+			-- checking if the segment is the original linestring geometry or if it is a subsegmentation of the original
 			CASE
 				WHEN osm_seg IS NOT NULL
 					THEN 'no'
-			    	WHEN osm_seg IS NULL 
-			    	AND NOT ST_Equals(
-			    		ST_LineSubstring( osm_geom, LEAST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)), 
-			    			ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))), 
-			    			GREATEST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)),
-			    			ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))) ),osm_geom)
-			    THEN 'no'
-			    	ELSE 'yes'
-			    END AS original_way,
-			    CASE
-				    WHEN osm_seg IS NOT NULL
-				    	THEN osm_seg
-			    	ELSE 
-						ST_LineSubstring( osm_geom, LEAST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)),
-							ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))),
-							GREATEST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)),
-							ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))))
-			    END AS way,
+			    WHEN osm_seg IS NULL 
+			    AND NOT ST_Equals(
+			    	ST_LineSubstring( osm_geom, LEAST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)), 
+			    		ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))), 
+			    		GREATEST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)),
+			    		ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))) ),osm_geom)
+			    	THEN 'no'
+			    ELSE 'yes'
+			END AS original_way,
+			CASE
+				WHEN osm_seg IS NOT NULL
+					THEN osm_seg
+			    ELSE 
+					ST_LineSubstring( osm_geom, LEAST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)),
+						ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))),
+						GREATEST(ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_startpoint(sdot_seg), osm_geom)),
+						ST_LineLocatePoint(osm_geom, ST_ClosestPoint(st_endpoint(sdot_seg), osm_geom))))
+			END AS way,
 			osm_geom,
 			sdot_geom
 		FROM sdot2osm_sw_prepocessed;
@@ -1043,8 +1049,6 @@ BEGIN
 	-- fill
 	
 END $$;
-
-
 
 
 
