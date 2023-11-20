@@ -4,7 +4,7 @@
 
 -- this function will take an input of computed angle (_rad) between any 2 linestring, and an input of a tolerence angle threshold (_thresh)
 -- to calculate whether or not the computed angle between 2 linestrings are within the threshold so we know if these 2 are parallel
-CREATE OR REPLACE FUNCTION public.f_within_degrees(_rad DOUBLE PRECISION, _thresh int) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION public.f_within_degrees(_rad DOUBLE PRECISION, _thresh bigint) RETURNS boolean AS $$
     WITH m AS (SELECT mod(degrees(_rad)::NUMERIC, 180) AS angle)
         ,a AS (SELECT CASE WHEN m.angle > 90 THEN m.angle - 180 ELSE m.angle END AS angle FROM m)
     SELECT abs(a.angle) < _thresh FROM a;
