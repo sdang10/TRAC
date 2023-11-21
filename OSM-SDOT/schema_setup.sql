@@ -74,4 +74,3 @@ CREATE TABLE automated.metrics (
 	percent_score float8,
 	conflated_geoms geometry
 );
-	
