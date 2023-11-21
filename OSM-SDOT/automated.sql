@@ -21,6 +21,56 @@ DECLARE
 
 BEGIN 
 	
+	-- SDOT boundary
+	CREATE TEMP TABLE sdot_boundary AS
+	SELECT 
+		ST_Buffer(
+			ST_Union(
+				ARRAY(
+					SELECT wkb_geometry
+					FROM sdot.censustract
+				)
+			), buffer
+		) AS geom;
+ 
+	-- index for better spatial query performance
+	CREATE INDEX bound_geom ON sdot_boundary USING GIST (geom);
+	
+	
+	
+		-- SDOT sidewalk
+	CREATE TEMP TABLE sdot_sidewalk AS
+		SELECT  
+			ogc_fid,
+			objectid,
+			sw_width/39.37 AS sw_width,
+			surftype, 
+			primarycrossslope AS cross_slope,
+			sw_category,
+			(ST_Dump(wkb_geometry)).geom AS geom,
+			ST_Length(wkb_geometry) AS length
+		FROM sdot.sidewalks
+		-- pulling only the SDOT data pertaining to sidewalk geometries that exist/have data within the defined bounding box
+		WHERE st_astext(wkb_geometry) != 'LINESTRING EMPTY'
+			AND surftype != 'UIMPRV'
+			AND sw_width != 0;
+		
+	-- index for better spatial query performance
+	CREATE INDEX sdot_geom ON sdot_sidewalk USING GIST (geom);
+
+
+	
+	-- SDOT access signals
+	-- used in the crossing conflation to aid in defining crossing locations
+	CREATE TEMP TABLE sdot_accpedsig AS
+		SELECT *
+		FROM sdot.accessible_pedestrian_signals AS aps;
+		
+	-- better naming convention
+	ALTER TABLE sdot_accpedsig RENAME COLUMN wkb_geometry TO geom;
+	
+	
+	
 	-- OSM sidewalk
 	CREATE TEMP TABLE osm_sidewalk AS
 		SELECT 
@@ -31,10 +81,21 @@ BEGIN
 		WHERE highway='footway' 
 		AND tags->'footway'='sidewalk' 
 		AND way && bb;
-
+	
 	-- better naming convention
 	ALTER TABLE osm_sidewalk RENAME COLUMN way TO geom;
-	CREATE INDEX sw_geom ON osm_sidewalk USING GIST (geom);
+
+
+
+	-- OSM data within SDOT boundary
+	CREATE TEMP TABLE osm_sw_in_boundary AS
+		SELECT DISTINCT sw.*
+		FROM osm_sidewalk AS sw
+		JOIN sdot_boundary AS b
+		ON ST_Intersects(b.geom, sw.geom);
+		   
+	-- index for better spatial query performance
+	CREATE INDEX sw_geom ON osm_sw_in_boundary USING GIST (geom);
 
 
 
@@ -49,67 +110,20 @@ BEGIN
 			
 	-- better naming convention
 	ALTER TABLE osm_crossing RENAME COLUMN way TO geom;
-	CREATE INDEX crossing_geom ON osm_crossing USING GIST (geom);
-	
-	
-	-- SDOT boundary
-	CREATE TEMP TABLE sdot_boundary AS
-	SELECT 
-		ST_Buffer(
-			ST_Union(
-				ARRAY(
-					SELECT wkb_geometry
-					FROM sdot.censustract
-				)
-			), buffer
-		) AS geom;
- 
-	CREATE INDEX bound_geom ON sdot_boundary USING GIST (geom);
 
 
 
-	-- OSM data within SDOT boundary
-	CREATE TEMP TABLE osm_sw_in_boundary AS
-	SELECT DISTINCT sw.*
-	FROM osm_sidewalk AS sw
-	JOIN sdot_boundary AS b
-	ON ST_Intersects(b.geom, sw.geom);
+	-- OSM crossing in SDOT boundary
+	CREATE TEMP TABLE osm_crossing_in_boundary AS
+		SELECT DISTINCT sw.*
+		FROM osm_crossing AS sw
+		JOIN sdot_boundary AS b
+		ON ST_Intersects(b.geom, sw.geom);
 
-
-
-	-- SDOT sidewalk
-	CREATE TEMP TABLE sdot_sidewalk AS
-		SELECT  
-			ogc_fid,
-			objectid,
-			sw_width/39.37 AS sw_width,
-			surftype, primarycrossslope AS cross_slope,
-			sw_category,
-			(ST_Dump(wkb_geometry)).geom AS geom,
-			ST_Length(wkb_geometry) AS length
-		FROM sdot.sidewalks
-		-- pulling only the SDOT data pertaining to sidewalk geometries that exist/have data within the defined bounding box
-		WHERE st_astext(wkb_geometry) != 'LINESTRING EMPTY'
-			AND surftype != 'UIMPRV'
-			AND sw_width != 0;
-		
-	-- better naming convention
-	CREATE INDEX sdot_geom ON sdot_sidewalk USING GIST (geom);
-
-
-	
-	-- SDOT access signals
-	-- used in the crossing conflation to aid in defining crossing locations
-	CREATE TEMP TABLE sdot_accpedsig AS
-		SELECT *
-		FROM sdot.accessible_pedestrian_signals AS aps
-		WHERE  wkb_geometry && bb;
-	
-		
-	-- better naming convention
-	ALTER TABLE sdot_accpedsig RENAME COLUMN wkb_geometry TO geom;
-		   
+	-- index for better spatial query performance
+	CREATE INDEX crossing_geom ON osm_crossing_in_boundary USING GIST (geom);
 		    
+
 END $$;
 
 
@@ -151,7 +165,7 @@ BEGIN
 		        SELECT 
 		        	osm_id, 
 		            ST_DumpPoints(geom) AS pt 
-		        FROM osm_sidewalk
+		        FROM osm_sw_in_boundary
 		        -- closed linestring defined as linestrings where startpoint and endpoint meet/equal each other
 		        WHERE ST_StartPoint(geom) = ST_Endpoint(geom)
 			) AS dumps 
@@ -175,7 +189,7 @@ BEGIN
 			ON p1.osm_id = p2.osm_id 
 			AND p1.segment_number < p2.segment_number 
 			AND ST_Intersects(p1.geom, p2.geom)
-		-- parallel is checked for and defined here as angle_degree (15 degrees)
+		-- parallel is checked for and defined here with the value "angle_degree"
 		WHERE  public.f_within_degrees(ST_Angle(p1.geom, p2.geom), angle_degree);
 	
 	
@@ -347,20 +361,14 @@ DECLARE
 
 	angle_degree int8 = 15;
 	
-	-- sdot.sw_width * 5
-	sdot_width int8 = 10;
+	-- buffer for when we only buffer one side of sidewalk 
+	buffer1 int8 = 18;
 
-	-- 4
-	buffer1 int8 = 6;
-
-	-- sw_width * 8
-	sw_width1 int8 = 16;
-
-	-- r1/r2 .sw_width * 6
-	sw_width2 int8 = 12;
+	-- buffer for when we buffer both sides of sidewalk
+	buffer2 int8 = 10;
 
 	-- 0.15
-	score_min float8 = 0.15;
+	score_min float8 = 0.10;
 
 	-- 0.4
 	overlap_perc_min float8 = 0.4;
@@ -386,7 +394,7 @@ BEGIN
 			'null' AS start_end_seg, 
 			geom, 
 			ST_Length(geom) AS length
-		FROM osm_sidewalk
+		FROM osm_sw_in_boundary
 		WHERE NOT ST_IsClosed(geom)
 	);
 
@@ -447,20 +455,20 @@ BEGIN
 					  				ST_ClosestPoint(st_startpoint(osm.geom), sdot.geom)) , ST_LineLocatePoint(sdot.geom, 
 					  				ST_ClosestPoint(st_endpoint(osm.geom), sdot.geom))), GREATEST(ST_LineLocatePoint(sdot.geom, 
 					  				ST_ClosestPoint(st_startpoint(osm.geom), sdot.geom)) , ST_LineLocatePoint(sdot.geom, 
-					  				ST_ClosestPoint(st_endpoint(osm.geom), sdot.geom))) ), sdot_width, 'endcap=flat join=round'),
-					  				ST_Buffer(osm.geom, buffer1, 'endcap=flat join=round'))) 
+					  				ST_ClosestPoint(st_endpoint(osm.geom), sdot.geom))) ), buffer2, 'endcap=flat join=round'),
+					  				ST_Buffer(osm.geom, buffer2, 'endcap=flat join=round'))) 
 					  	ELSE
 					  		ST_Area(ST_Intersection(ST_Buffer(ST_LineSubstring( osm.geom, LEAST(ST_LineLocatePoint(osm.geom, 
 					  			ST_ClosestPoint(st_startpoint(sdot.geom), osm.geom)) , ST_LineLocatePoint(osm.geom, 
 					  			ST_ClosestPoint(st_endpoint(sdot.geom), osm.geom))), GREATEST(ST_LineLocatePoint(osm.geom, 
 					  			ST_ClosestPoint(st_startpoint(sdot.geom), osm.geom)) , ST_LineLocatePoint(osm.geom, 
-					  			ST_ClosestPoint(st_endpoint(sdot.geom), osm.geom))) ), buffer1, 'endcap=flat join=round'),
-					  			ST_Buffer(sdot.geom, sdot_width, 'endcap=flat join=round'))) 
+					  			ST_ClosestPoint(st_endpoint(sdot.geom), osm.geom))) ), buffer2, 'endcap=flat join=round'),
+					  			ST_Buffer(sdot.geom, buffer2, 'endcap=flat join=round'))) 
 					END DESC
 				)  AS RANK
 			FROM osm_sidewalk_preprocessed AS osm
 			JOIN sdot_sidewalk AS sdot
-				ON ST_Intersects(ST_Buffer(sdot.geom, sdot_width, 'endcap=flat join=round'), ST_Buffer(osm.geom, buffer1, 
+				ON ST_Intersects(ST_Buffer(sdot.geom, buffer2, 'endcap=flat join=round'), ST_Buffer(osm.geom, buffer2, 
 					'endcap=flat join=round'))
 			WHERE  -- the the sw geometries have a similarity IN angle (parallel to each other) WITH a leniency value OF "angle_degree"
 				CASE
@@ -490,10 +498,10 @@ BEGIN
 			CASE
 				WHEN osm_seg IS NULL
 			  		THEN 
-			  			ST_Length(ST_Intersection(sdot_seg, ST_Buffer(osm_geom, sw_width1,  
+			  			ST_Length(ST_Intersection(sdot_seg, ST_Buffer(osm_geom, buffer1,  
 			  				'endcap=flat join=round')))/GREATEST(ST_Length(sdot_seg), ST_Length(osm_geom))
 			  	ELSE 
-			  		ST_Length(ST_Intersection(osm_seg, ST_Buffer(sdot_geom, sw_width1,  
+			  		ST_Length(ST_Intersection(osm_seg, ST_Buffer(sdot_geom, buffer1,  
 			  			'endcap=flat join=round')))/GREATEST(ST_Length(osm_seg), ST_Length(sdot_geom))
 			END AS conflated_score, -- creates a ratio (0-1) based ON the buffer INTERSECTION length AND maximum length OF the two geometries
 			osm_seg,
@@ -509,10 +517,10 @@ BEGIN
 			CASE
 				WHEN osm_seg IS NULL
 			  		THEN 
-			  			ST_Length(ST_Intersection(sdot_seg, ST_Buffer(osm_geom, sw_width1,  
+			  			ST_Length(ST_Intersection(sdot_seg, ST_Buffer(osm_geom, buffer1,  
 			  				'endcap=flat join=round')))/GREATEST(ST_Length(sdot_seg), ST_Length(osm_geom)) > score_min 
 				ELSE
-					ST_Length(ST_Intersection(osm_seg, ST_Buffer(sdot_geom, sw_width1,  
+					ST_Length(ST_Intersection(osm_seg, ST_Buffer(sdot_geom, buffer1,  
 						'endcap=flat join=round')))/GREATEST(ST_Length(osm_seg), ST_Length(sdot_geom)) > score_min 
 			END 
 	); 
@@ -604,7 +612,7 @@ BEGIN
 					  			ST_ClosestPoint(st_startpoint(r2.sdot_seg), r2.osm_geom)) , ST_LineLocatePoint(r2.osm_geom, 
 					  			ST_ClosestPoint(st_endpoint(r2.sdot_seg), r2.osm_geom))),GREATEST(ST_LineLocatePoint(r2.osm_geom, 
 					  			ST_ClosestPoint(st_startpoint(r2.sdot_seg), r2.osm_geom)) , ST_LineLocatePoint(r2.osm_geom, 
-					  			ST_ClosestPoint(st_endpoint(r2.sdot_seg), r2.osm_geom))) ), ST_Buffer(r1.osm_seg, sw_width2, 
+					  			ST_ClosestPoint(st_endpoint(r2.sdot_seg), r2.osm_geom))) ), ST_Buffer(r1.osm_seg, buffer1, 
 					  			'endcap=flat join=round'))) 
 					  		/ LEAST(ST_Length(r1.osm_seg), ST_Length (ST_LineSubstring(r2.osm_geom,
 					  			LEAST(ST_LineLocatePoint(r2.osm_geom, ST_ClosestPoint(st_startpoint(r2.sdot_seg), r2.osm_geom)), 
@@ -618,7 +626,7 @@ BEGIN
 				  	 			ST_ClosestPoint(st_startpoint(r1.sdot_seg), r1.osm_geom)) , ST_LineLocatePoint(r1.osm_geom, 
 				  	 			ST_ClosestPoint(st_endpoint(r1.sdot_seg), r1.osm_geom))),GREATEST(ST_LineLocatePoint(r1.osm_geom, 
 				  	 			ST_ClosestPoint(st_startpoint(r1.sdot_seg), r1.osm_geom)) , ST_LineLocatePoint(r1.osm_geom, 
-				  	 			ST_ClosestPoint(st_endpoint(r1.sdot_seg), r1.osm_geom))) ), ST_Buffer(r2.osm_seg, sw_width2, 
+				  	 			ST_ClosestPoint(st_endpoint(r1.sdot_seg), r1.osm_geom))) ), ST_Buffer(r2.osm_seg, buffer1, 
 				  	 			'endcap=flat join=round')))
 						  	/ LEAST(ST_Length(r2.osm_seg),ST_Length (ST_LineSubstring( r1.osm_geom, LEAST(ST_LineLocatePoint(r1.osm_geom, 
 						  		ST_ClosestPoint(st_startpoint(r1.sdot_seg), r1.osm_geom)), ST_LineLocatePoint(r1.osm_geom, 
@@ -628,7 +636,7 @@ BEGIN
 					WHEN r1.sdot_seg IS NULL 
 					AND r2.sdot_seg IS NULL
 				  		THEN 
-				  	 		ST_Length(ST_Intersection(r1.osm_seg, ST_Buffer(r2.osm_seg, sw_width2, 'endcap=flat join=round') ) )
+				  	 		ST_Length(ST_Intersection(r1.osm_seg, ST_Buffer(r2.osm_seg, buffer1, 'endcap=flat join=round') ) )
 				  	 	  	/ LEAST(ST_Length(r1.osm_seg), ST_Length(r2.osm_seg)) > overlap_perc_min	 	
 				END
 
@@ -707,7 +715,7 @@ BEGIN
 									ST_LineLocatePoint(r2.sdot_geom, ST_ClosestPoint(st_endpoint(r2.osm_seg), 
 									r2.sdot_geom))),GREATEST(ST_LineLocatePoint(r2.sdot_geom, ST_ClosestPoint(st_startpoint(r2.osm_seg),
 									r2.sdot_geom)) , ST_LineLocatePoint(r2.sdot_geom, ST_ClosestPoint(st_endpoint(r2.osm_seg),
-									r2.sdot_geom))) ), ST_Buffer(r1.sdot_seg, sw_width2, 'endcap=flat join=round')) )
+									r2.sdot_geom))) ), ST_Buffer(r1.sdot_seg, buffer1, 'endcap=flat join=round')) )
 						  		/ LEAST(ST_Length(r1.sdot_seg),ST_Length(ST_LineSubstring(r2.sdot_geom,LEAST(ST_LineLocatePoint(r2.sdot_geom, 
 						  			ST_ClosestPoint(st_startpoint(r2.osm_seg), r2.sdot_geom)) , ST_LineLocatePoint(r2.sdot_geom, 
 						  			ST_ClosestPoint(st_endpoint(r2.osm_seg), r2.sdot_geom))),GREATEST(ST_LineLocatePoint(r2.sdot_geom, 
@@ -720,7 +728,7 @@ BEGIN
 									ST_ClosestPoint(st_startpoint(r1.osm_seg), r1.sdot_geom)) , ST_LineLocatePoint(r1.sdot_geom, 
 									ST_ClosestPoint(st_endpoint(r1.osm_seg), r1.sdot_geom))),GREATEST(ST_LineLocatePoint(r1.sdot_geom, 
 									ST_ClosestPoint(st_startpoint(r1.osm_seg), r1.sdot_geom)) , ST_LineLocatePoint(r1.sdot_geom, 
-									ST_ClosestPoint(st_endpoint(r1.osm_seg), r1.sdot_geom))) ), ST_Buffer(r2.sdot_seg, sw_width2,
+									ST_ClosestPoint(st_endpoint(r1.osm_seg), r1.sdot_geom))) ), ST_Buffer(r2.sdot_seg, buffer1,
 									'endcap=flat join=round')) )
 				  				/ LEAST(ST_Length(r2.sdot_seg),ST_Length(ST_LineSubstring(r1.sdot_geom,
 				  					LEAST(ST_LineLocatePoint(r1.sdot_geom, ST_ClosestPoint(st_startpoint(r1.osm_seg), r1.sdot_geom)),
@@ -730,7 +738,7 @@ BEGIN
 					  	WHEN r1.sdot_seg IS NOT NULL 
 					  	AND r2.sdot_seg IS NOT NULL
 							THEN 
-								ST_Length(ST_Intersection(r1.sdot_seg, ST_Buffer(r2.sdot_seg, sw_width2, 'endcap=flat join=round')) )
+								ST_Length(ST_Intersection(r1.sdot_seg, ST_Buffer(r2.sdot_seg, buffer1, 'endcap=flat join=round')) )
 						  		/ LEAST(ST_Length(r1.sdot_seg), ST_Length(r2.sdot_seg)) > overlap_perc_min
 					END
 		)
@@ -788,7 +796,7 @@ BEGIN
 	
 	
 	-- FINAL TABLE that will be exported
-	CREATE TABLE automated.conflation_result AS (
+	CREATE TABLE automated.sidewalk_conflation_result AS (
 		SELECT 
 			sdot2osm.osm_id,
 			sdot2osm.start_end_seg,
@@ -801,8 +809,8 @@ BEGIN
 			conflated_score,
 			original_way,
 			ST_Transform(sdot2osm.way, 4326) AS way 
-		FROM sidewalk sdot2osm
-		JOIN osm_sidewalk osm
+		FROM sidewalk AS sdot2osm
+		JOIN osm_sw_in_boundary AS osm
 			ON sdot2osm.osm_id = osm.osm_id
 		
 		UNION
@@ -823,7 +831,7 @@ BEGIN
 				ELSE 'yes'
 			END AS original_way,
 				ST_Transform(pre_osm.geom, 4326) AS way
-		FROM osm_sidewalk osm
+		FROM osm_sw_in_boundary AS osm
 		JOIN osm_sidewalk_preprocessed AS pre_osm
 			ON osm.osm_id = pre_osm.osm_id
 		WHERE (pre_osm.osm_id, pre_osm.start_end_seg) NOT IN (
@@ -845,16 +853,14 @@ LANGUAGE plpgsql AS $$
 
 DECLARE 
 
-	-- 10
 	osm_buffer int8 = 10;
 	
-	-- 20
 	sdot_buffer int8 = 20;
 
 BEGIN
 	
 	-- FINAL TABLE
-	CREATE TABLE automated.crossing_json AS (
+	CREATE TABLE automated.crossing_conflation_result AS (
 		SELECT 
 			osm.osm_id, 
 			osm.highway,
@@ -871,7 +877,7 @@ BEGIN
 				osm.highway, 
 				osm.tags, 
 				osm.geom
-			FROM osm_crossing AS osm 
+			FROM osm_crossing_in_boundary AS osm 
 			JOIN sdot_accpedsig AS sdot
 				ON ST_Intersects(ST_Buffer(osm.geom, osm_buffer, 'endcap=flat join=round'), ST_Buffer(sdot.geom, sdot_buffer))
 		) AS osm
@@ -880,10 +886,10 @@ BEGIN
 		
 		-- IF the crossing did NOT conflate:
 		SELECT osm.osm_id, osm.highway, osm.tags, ST_Transform(osm.geom, 4326) AS way
-		FROM osm_crossing osm
+		FROM osm_crossing_in_boundary AS osm
 		WHERE osm.osm_id NOT IN (
 			SELECT osm.osm_id
-			FROM osm_crossing AS osm 
+			FROM osm_crossing_in_boundary AS osm 
 			JOIN sdot_accpedsig AS sdot
 			ON ST_Intersects(ST_Buffer(osm.geom, osm_buffer, 'endcap=flat join=round'), ST_Buffer(sdot.geom, sdot_buffer))) );
 
@@ -894,7 +900,7 @@ END $$;
 	   
 	   
 
-CREATE OR REPLACE PROCEDURE metric_table()
+CREATE OR REPLACE PROCEDURE metrics()
 LANGUAGE plpgsql AS $$
 
 BEGIN
@@ -939,7 +945,7 @@ BEGIN
 			osm.geom, 
 			COALESCE(SUM(ST_Length(sdot2osm.conflated_osm_seg))/ST_Length(osm.geom), 0) AS percent_conflated,
 			ST_UNION(sdot2osm.conflated_osm_seg) AS osm_conflated_subseg
-		FROM osm_sidewalk AS osm
+		FROM osm_sw_in_boundary AS osm
 		LEFT JOIN (
 			SELECT 
 				*,
@@ -995,9 +1001,9 @@ BEGIN
 	        'osm' AS data_source,
 	        osm.osm_id AS id,
 	        osm.geom,
-	        COALESCE(SUM(ST_Length(sdot2osm.conflated_osm_seg) / ST_Length(osm.geom), 0)) AS percent_conflated,
+	        COALESCE(SUM(ST_Length(sdot2osm.conflated_osm_seg)) / ST_Length(osm.geom), 0) AS percent_conflated,
 	        ST_UNION(sdot2osm.conflated_osm_seg) AS conflated_subseg
-	    FROM osm_sidewalk AS osm
+	    FROM osm_sw_in_boundary AS osm
 	    LEFT JOIN (
 	        SELECT
 	            *,
@@ -1033,22 +1039,36 @@ BEGIN
 	CALL data_setup();
 	CALL preprocess();
 	CALL sidewalk_to_sidewalk_conflation();
-	CALL metric_table();
 	CALL crossing_conflation();
+	CALL metrics();
 	
 END $$;
 
 
 
--- rerun procedure --
-CREATE OR REPLACE PROCEDURE rerun()
+-- data transfer procedure 
+CREATE OR REPLACE PROCEDURE transfer()
 LANGUAGE plpgsql AS $$
 
 BEGIN
 	
-	-- fill
+	CALL sw_conflation_transfer();
+	CALL crossing_conflation_transfer();
+	CALL metrics_transfer();
 	
 END $$;
+
+
+
+-- rerun procedure
+CREATE OR REPLACE PROCEDURE rerun()
+LANGUAGE plpgsql AS $$
+
+BEGIN
+		
+	CALL
+	
+END
 
 
 
