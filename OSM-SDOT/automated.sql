@@ -17,7 +17,9 @@ DECLARE
 	bb box2d := st_setsrid( st_makebox2d( st_makepoint(-13632381,6008135), st_makepoint(-13603222,6066353)), 3857);
 
 	-- defined boundary buffer
-	buffer int8 = 15;
+	buffer integer = 15;
+
+	aps = sdot.accessible_pedestrian_signals;
 
 BEGIN 
 	
@@ -64,7 +66,7 @@ BEGIN
 	-- used in the crossing conflation to aid in defining crossing locations
 	CREATE TEMP TABLE sdot_accpedsig AS
 		SELECT *
-		FROM sdot.accessible_pedestrian_signals AS aps;
+		FROM aps AS aps;
 		
 	-- better naming convention
 	ALTER TABLE sdot_accpedsig RENAME COLUMN wkb_geometry TO geom;
@@ -147,7 +149,7 @@ DECLARE
 	_prev record;
 	_osm_id int8;
 
-	angle_degree int8 = 15;
+	angle_degree integer = 15;
 
 BEGIN
 	
@@ -359,19 +361,19 @@ LANGUAGE plpgsql AS $$
 
 DECLARE
 
-	angle_degree int8 = 15;
+	angle_degree integer = 15;
 	
 	-- buffer for when we only buffer one side of sidewalk 
-	buffer1 int8 = 18;
+	buffer1 integer = 18;
 
 	-- buffer for when we buffer both sides of sidewalk
-	buffer2 int8 = 10;
+	buffer2 integer = 10;
 
 	-- 0.15
-	score_min float8 = 0.10;
+	score_min float = 0.10;
 
 	-- 0.4
-	overlap_perc_min float8 = 0.4;
+	overlap_perc_min float = 0.4;
 
 	
 
@@ -853,9 +855,9 @@ LANGUAGE plpgsql AS $$
 
 DECLARE 
 
-	osm_buffer int8 = 10;
+	osm_buffer integer = 10;
 	
-	sdot_buffer int8 = 20;
+	sdot_buffer integer = 20;
 
 BEGIN
 	
@@ -1069,9 +1071,6 @@ BEGIN
 	CALL
 	
 END
-
-
-
 
 
 
