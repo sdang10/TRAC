@@ -22,10 +22,6 @@ $$ LANGUAGE SQL STRICT;
 
 
 
-CREATE OR REPLACE FUNCTION 
-
-
-
 CREATE TABLE automated.users (
 	user_id serial PRIMARY KEY,
 	username TEXT,
