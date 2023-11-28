@@ -12,37 +12,52 @@ $$ LANGUAGE SQL IMMUTABLE STRICT;
 
 
 
+CREATE SCHEMA IF NOT EXISTS util;
+
+ALTER SCHEMA util OWNER TO postgres;
+
+CREATE OR REPLACE FUNCTION util.f_now_utc() RETURNS timestamp AS $$
+    SELECT date_trunc('second', clock_timestamp() at time zone 'utc');
+$$ LANGUAGE SQL STRICT;
+
+
+
+CREATE OR REPLACE FUNCTION 
+
+
+
 CREATE TABLE automated.users (
 	user_id serial PRIMARY KEY,
 	username TEXT,
 	email TEXT,
-	password TEXT
+	user_password TEXT
 );
+
+INSERT INTO automated.users VALUES 
+(0, "system", "machine", "password");
 
 
 
 CREATE TABLE automated.files (
 	file_id serial PRIMARY KEY,
-	user_id REFERENCES automated.users(user_id),
+	user_id NOT NULL REFERENCES automated.users(user_id),
 	file_name TEXT,
-	upload_dtm TIMESTAMP WITH TIME ZONE,
-	description TEXT
+	description TEXT,
+	upload_dtm TIMESTAMP WITH TIME ZONE DEFAULT util.now_utc()
 );
 
-
-
-SELECT date_trunc('second', clock_timestamp() at time zone 'utc');
-
+INSERT INTO automated.files VALUES
+(0, 0, "OSM", "osm data", util.now_utc()),
+(1, 0, "SDOT", "sdot data", util.now_utc());
 
 
 
 CREATE TABLE automated.conflations (
 	conflation_id INT8 PRIMARY KEY,
-	base_file_ID integer REFERENCES automated.files(file_id),
-	compared_file_ID integer REFERENCES automated.files(file_id),
-	process_dtm TIMESTAMP WITH TIME ZONE
+	base_file_id integer NOT NULL REFERENCES automated.files(file_id),
+	compared_file_id integer NOT NULL REFERENCES automated.files(file_id),
+	process_dtm TIMESTAMP WITH TIME ZONE DEFAULT util.now_utc()
 );
-
 
 
 
@@ -54,11 +69,21 @@ CREATE TABLE automated.statuses (
 
 
 
+INSERT INTO automated.statuses VALUES 
+(0, "system_approved", "approved by the system automatically"),
+(1, "approved", "approved by manual review"),
+(10, "system_rejected", "rejected by the system automatically"),
+(11, "reject_base", "rejected for base line work"),
+(12, "reject_compared", "rejected for compared data line work"),
+(13, "reject_other", "rejected for other reason");
+
+
 
 CREATE TABLE automated.results (
-	osm_id INT8,
+	result_id serial PRIMARY KEY,
+	osm_id INT8 NOT NULL,
 	start_end_seg TEXT,
-	sdot_id INT4,
+	sdot_id INT4 NOT NULL,
 	highway TEXT,
 	osm_surface TEXT,
 	sdot_surface TEXT,
@@ -68,9 +93,18 @@ CREATE TABLE automated.results (
 	original_way TEXT,
 	way geometry,
 	conflation_id integer REFERENCES automated.conflations(conflation_id),
-	user_ID integer REFERENCES automated.users(user_id),
+	default_status_id integer REFERENCES automated.statuses(status_id)
+);
+
+
+
+CREATE TABLE automated.results_review (
+	results_review_id serial PRIMARY KEY,
+	user_id integer NOT NULL REFERENCES automated.users(user_id),
 	status_id integer REFERENCES automated.statuses(status_id),
-	action_dtm TIMESTAMP WITH TIME ZONE
+	note TEXT,
+	action_dtm TIMESTAMP WITH TIME ZONE,
+	result_id integer NOT NULL REFERENCES automated.results(result_id)
 );
 
 
@@ -78,13 +112,15 @@ CREATE TABLE automated.results (
 
 CREATE TABLE automated.metrics (
 	conflation_id serial REFERENCES automated.conflations(conflation_id),
-	file_ID integer REFERENCES automated.files(file_id),
-	segment_ID integer,
+	file_id integer REFERENCES automated.files(file_id),
+	segment_id integer,
 	geom geometry,
 	percent_score float8,
 	conflated_geoms geometry
 );
 	
+
+
 CREATE TABLE automated.file_data(
 	data_id TEXT,
 	file_id REFERENCES automated.files(file_id),
