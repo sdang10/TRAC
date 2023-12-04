@@ -30,7 +30,7 @@ CREATE TABLE automated.users (
 );
 
 INSERT INTO automated.users VALUES 
-(0, "system", "machine", "password");
+	(0, "system", "system", "password");
 
 
 
@@ -43,8 +43,20 @@ CREATE TABLE automated.files (
 );
 
 INSERT INTO automated.files VALUES
-(0, 0, "OSM", "osm data", util.now_utc()),
-(1, 0, "SDOT", "sdot data", util.now_utc());
+	(0, 0, "OSM", "osm data", util.now_utc()),
+	(1, 0, "SDOT", "sdot data", util.now_utc());
+
+
+
+CREATE TABLE automated.file_data (
+	file_id REFERENCES automated.files(file_id),
+	data_id TEXT,
+	geom geometry,
+	data_attributes hstore
+);
+
+INSERT INTO automated.file_data VALUES
+	(0, "osm_id", )
 
 
 
@@ -66,12 +78,12 @@ CREATE TABLE automated.statuses (
 
 
 INSERT INTO automated.statuses VALUES 
-(0, "system_approved", "approved by the system automatically"),
-(1, "approved", "approved by manual review"),
-(10, "system_rejected", "rejected by the system automatically"),
-(11, "reject_base", "rejected for base line work"),
-(12, "reject_compared", "rejected for compared data line work"),
-(13, "reject_other", "rejected for other reason");
+	(0, "system_approved", "approved by the system automatically"),
+	(1, "approved", "approved by manual review"),
+	(10, "system_rejected", "rejected by the system automatically"),
+	(11, "reject_base", "rejected for base line work"),
+	(12, "reject_compared", "rejected for compared data line work"),
+	(13, "reject_other", "rejected for other reason");
 
 
 
@@ -113,13 +125,4 @@ CREATE TABLE automated.metrics (
 	geom geometry,
 	percent_score float8,
 	conflated_geoms geometry
-);
-	
-
-
-CREATE TABLE automated.file_data(
-	data_id TEXT,
-	file_id REFERENCES automated.files(file_id),
-	geom geometry,
-	data_attributes hstore
 );
