@@ -37,26 +37,24 @@ INSERT INTO automated.users VALUES
 CREATE TABLE automated.files (
 	file_id serial PRIMARY KEY,
 	user_id NOT NULL REFERENCES automated.users(user_id),
-	file_name TEXT,
-	description TEXT,
+	file_name NOT NULL TEXT,
+	description NOT NULL TEXT,
+	unique_identifier_column_name NOT NULL TEXT,
+	geom_column_name NOT NULL TEXT,
 	upload_dtm TIMESTAMP WITH TIME ZONE DEFAULT util.now_utc()
 );
 
 INSERT INTO automated.files VALUES
-	(0, 0, "OSM", "osm data", util.now_utc()),
-	(1, 0, "SDOT", "sdot data", util.now_utc());
+	(0, 0, "OSM", "osm data", "osm_id", "way", util.now_utc()),
+	(1, 0, "SDOT", "sdot data", "objectid", "wkb_geometry", util.now_utc());
 
 
 
 CREATE TABLE automated.file_data (
 	file_id REFERENCES automated.files(file_id),
-	data_id TEXT,
 	geom geometry,
 	data_attributes hstore
 );
-
-INSERT INTO automated.file_data VALUES
-	(0, "osm_id", )
 
 
 
