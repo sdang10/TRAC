@@ -10,14 +10,12 @@ DECLARE
     row_record RECORD;
     id_column text;
     geom_column text;
-   
+	
 BEGIN
 	
     -- Get column names from information schema
-    SELECT array_agg(column_name)
-    INTO column_names
-    FROM information_schema.columns
-    WHERE table_schema = 'automated' AND table_name = 'sidewalks' AND column_name NOT IN ('objectid', 'wkb_geometry');
+    SELECT get_column_names('sidewalks')
+    INTO column_names;
 
     -- Identify the positions of 'id' and 'geom' columns
     id_column := (SELECT column_name FROM information_schema.columns WHERE table_schema = 'automated' AND table_name = 'sidewalks' AND column_name = 'objectid');
@@ -40,17 +38,171 @@ END $$;
 
 
 
+
+
+
+
+
+DROP FUNCTION transform_table
+
+
+CREATE OR REPLACE FUNCTION transform_table(the_table_name TEXT, id_column TEXT, geom_column TEXT)
+RETURNS TABLE (id INTEGER, geom geometry, info hstore)
+LANGUAGE plpgsql AS $$
+DECLARE
+    column_names text;
+    column_values text;
+    specific_column_value text;
+    query_string text;
+    row_record RECORD;
+BEGIN
+    -- Validate or sanitize the input table name to prevent SQL injection
+    -- Example: Add your validation logic here
+    -- IF the_table_name ~ '^[a-zA-Z_][a-zA-Z0-9_]*$' THEN
+    --   RAISE EXCEPTION 'Invalid table name';
+    -- END IF;
+
+    -- Get column names from information schema
+    SELECT get_column_names(the_table_name) INTO column_names;
+
+    -- Create a new table with three columns: id, geom, and info (hstore)
+    EXECUTE format('CREATE TABLE automated.new_table (id INTEGER, geom geometry, info hstore)');
+
+    -- Iterate through each row in the original table.
+    FOR row_record IN EXECUTE format('SELECT * FROM automated.%I', the_table_name) LOOP
+        -- Initialize column_values for each row
+        column_values := '';
+
+        -- Iterate through each column in the row
+        FOR specific_column_value IN SELECT row_record.* LOOP
+            -- Handle NULL values if necessary
+            IF specific_column_value IS NULL THEN
+                specific_column_value := 'NULL';
+            ELSE
+                -- Quote and escape values appropriately
+                specific_column_value := quote_literal(specific_column_value);
+            END IF;
+
+            -- appending the specified values into a comma-separated list
+            column_values := column_values || specific_column_value || ', ';
+        END LOOP;
+
+        -- Trim the trailing comma and space
+        column_values := rtrim(column_values, ', ');
+
+        -- Construct and execute dynamic INSERT query using values from the row_record
+        query_string := 'INSERT INTO automated.new_table (id, geom, info) VALUES (' || row_record.id_column || ', ' || row_record.geom_column || ', hstore(ARRAY[' || quote_literal(column_names) || '], ARRAY[' || column_values || ']))';
+
+        -- Execute the dynamic query
+        EXECUTE query_string;
+    END LOOP;
+
+    -- Return the transformed table
+    RETURN QUERY EXECUTE 'SELECT * FROM automated.new_table';
+END $$;
+
+
+
+
+
+
+
+
+
+SELECT transform_table('sidewalks', 'objectid', 'wkb_geometry');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 CALL transform_table()
 
 
 
 
+CREATE OR REPLACE PROCEDURE mhm()
+LANGUAGE plpgsql AS $$
+DECLARE 
+	column_names TEXT;
+	column_names_array text[];
+BEGIN 
+	
+	SELECT get_column_names('sidewalks')
+    INTO column_names;
+   
+   	-- Convert the comma-separated string to an array
+   	column_names_array := string_to_array(column_names, ', ');
+   
+   	-- Output the array
+    RAISE NOTICE 'Column Names: %', column_names_array;
+	
+END $$;
+
+CALL mhm();
 
 
 
 
 
 
+
+
+
+
+DROP FUNCTION get_column_names
+
+CREATE OR REPLACE FUNCTION get_column_names(the_table_name TEXT, col1_name TEXT DEFAULT NULL, col2_name TEXT DEFAULT NULL)
+RETURNS text AS $$
+DECLARE
+    column_list text;
+BEGIN
+    SELECT string_agg(column_name, ', ') INTO column_list
+    FROM information_schema.columns
+    WHERE table_schema = 'automated' AND table_name = the_table_name
+    AND (
+		(col1_name IS NULL AND col2_name IS NULL)
+		OR (column_name NOT IN (col1_name, col2_name))
+	);
+
+    RETURN column_list;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+SELECT get_column_names('sidewalks')
+SELECT get_column_names('sidewalks', 'objectid', 'unittype')
+
+
+
+
+
+
+
+
+
+
+
+
+SELECT * FROM merge_columns_to_hstore('sidewalks', 'objectid', 'wkb_geometry')
+
+
+
+
+SELECT * FROM pg_extension WHERE extname = 'hstore';
 
 
 
@@ -224,9 +376,6 @@ END $$;
 
 
 
-
-
-
 CALL modify_table()
 
 SELECT * FROM automated.new_table
@@ -235,4 +384,57 @@ SELECT * FROM automated.new_table
 SELECT *
 FROM INFORMATION_SCHEMA.COLUMNS
 WHERE TABLE_NAME = N'sidewalks'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE OR REPLACE FUNCTION filter_by_bbox(table_name text, bbox box2d)
+RETURNS TABLE (id INTEGER, geom geometry, info hstore) AS $$
+BEGIN
+	RETURN QUERY EXECUTE
+		format(
+			'SELECT id, (ST_Dump(geom)).geom AS geom, info 
+				FROM automated.%I
+            	WHERE geom && %L', table_name, bbox)
+        USING bbox;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP FUNCTION filter_by_bbox(text,geometry)
+
+SELECT * FROM filter_by_bbox('new_table', st_setsrid( st_makebox2d( st_makepoint(-13616215,6052850), st_makepoint(-13614841,6054964)), 3857))
+
+
+
 
