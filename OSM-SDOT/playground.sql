@@ -1,264 +1,4 @@
-CREATE OR REPLACE PROCEDURE transform_table()
-LANGUAGE plpgsql
-AS $$
-
-DECLARE
-    
-	column_names text[];
-    column_values text[];
-    query_string text;
-    row_record RECORD;
-    id_column text;
-    geom_column text;
-	
-BEGIN
-	
-    -- Get column names from information schema
-    SELECT get_column_names('sidewalks')
-    INTO column_names;
-
-    -- Identify the positions of 'id' and 'geom' columns
-    id_column := (SELECT column_name FROM information_schema.columns WHERE table_schema = 'automated' AND table_name = 'sidewalks' AND column_name = 'objectid');
-    geom_column := (SELECT column_name FROM information_schema.columns WHERE table_schema = 'automated' AND table_name = 'sidewalks' AND column_name = 'wkb_geometry');
-
-    -- Create a new table with three columns: id, geom, and info (hstore)
-    EXECUTE 'CREATE TABLE automated.new_table (id INTEGER, geom geometry, info hstore)';
-
-	-- 
-	FOR row_record IN EXECUTE 'SELECT * FROM automated.sidewalks' LOOP
-		-- Extract values dynamically
-        EXECUTE 'SELECT $1.' || array_to_string(column_names, ', $1.') INTO column_values USING row_record;
-
-        -- Construct and execute dynamic INSERT query
-        query_string := 'INSERT INTO automated.new_table (id, geom, info) VALUES (' || id_column || ', ' || geom_column || ', hstore(ARRAY[' || quote_literal(column_names) || '], ARRAY[' || column_values || ']))';
-        EXECUTE query_string USING row_record;
-    END LOOP; 
-END $$;
-
-
-
-
-
-
-
-
-
-DROP FUNCTION transform_table
-
-
-CREATE OR REPLACE FUNCTION transform_table(the_table_name TEXT, id_column TEXT, geom_column TEXT)
-RETURNS TABLE (id INTEGER, geom geometry, info hstore)
-LANGUAGE plpgsql AS $$
-DECLARE
-    column_names text;
-    column_names_array text[];
-    column_values text;
-    specific_column_value text;
-    query_string text;
-    row_record RECORD;
-   	i int;
-   	column_names_array_length int;
-BEGIN
-    -- Validate or sanitize the input table name to prevent SQL injection
-    -- Example: Add your validation logic here
---    IF the_table_name ~ '^[a-zA-Z_][a-zA-Z0-9_]*$' 
---    	THEN RAISE EXCEPTION 'Invalid table name';
---    END IF;
-
-    -- Get column names from information schema
-    SELECT get_column_names(the_table_name) INTO column_names;
-   
-    -- Convert the comma-separated string to an array
-   	column_names_array := string_to_array(column_names, ', ');
-	
-   	-- Get the length of column_names_array
-   	column_names_array_length := array_length(column_names_array, 1);
-   
-    -- Create a new table with three columns: id, geom, and info (hstore)
-    EXECUTE format('CREATE TABLE automated.new_table (id INTEGER, geom geometry, info hstore)');
-
-    -- Iterate through each row in the original table.
-    FOR row_record IN EXECUTE format('SELECT * FROM automated.%I', the_table_name) LOOP
-        -- Initialize column_values for each row
-        column_values := '';
-
-        -- Iterate through each column in the row
-        FOR i IN 1..column_names_array_length LOOP
-            -- Handle NULL values if necessary
-            IF row_record[specific_column] IS NULL THEN
-                specific_column_value := 'NULL';
-            ELSE
-                -- Quote and escape values appropriately
-                specific_column_value := quote_literal(row_record[specific_column]);
-            END IF;
-
-            -- appending the specified values into a comma-separated list
-            column_values := column_values || specific_column_value || ', ';
-        END LOOP;
-
-        -- Trim the trailing comma and space
-        column_values := rtrim(column_values, ', ');
-
-        -- Construct and execute dynamic INSERT query using values from the row_record
-		query_string := 'INSERT INTO automated.new_table (id, geom, info) VALUES (' || row_record[id_column] || ', ' || row_record[geom_column] || ', hstore(ARRAY[' || quote_literal(column_names) || '], ARRAY[' || quote_literal(column_values) || ']))';
-
-		-- Execute the dynamic query
-		EXECUTE query_string;
-
-    END LOOP;
-
-    -- Return the transformed table
-    RETURN QUERY EXECUTE 'SELECT * FROM automated.new_table';
-END $$;
-
-
-
-
-
-
-
-
-
-SELECT transform_table('sidewalks', 'objectid', 'wkb_geometry');
-
-
-
-
-
-CREATE OR REPLACE FUNCTION transform_table_1(the_table_name TEXT, id_column TEXT, geom_column TEXT)
-RETURNS TABLE (id INTEGER, geom geometry, info hstore)
-LANGUAGE plpgsql AS $$
-DECLARE
-    column_names text;
-    column_names_array text[];
-    column_values text;
-    specific_column_value text;
-    query_string text;
-    row_record RECORD;
-BEGIN
-    -- Validate or sanitize the input table name to prevent SQL injection
-    -- Example: Add your validation logic here
---    IF the_table_name ~ '^[a-zA-Z_][a-zA-Z0-9_]*$' 
---    	THEN RAISE EXCEPTION 'Invalid table name';
---    END IF;
-
-    -- Get column names from information schema
-    SELECT get_column_names(the_table_name) INTO column_names;
-   
-    -- Convert the comma-separated string to an array
-   	column_names_array := string_to_array(column_names, ', ');
-
-    -- Create a new table with three columns: id, geom, and info (hstore)
-    EXECUTE format('CREATE TABLE automated.new_table (id INTEGER, geom geometry, info hstore)');
-
-    -- Iterate through each row in the original table.
-    FOR i IN 1..array_length LOOP
-        -- Initialize column_values for each row
-        column_values := '';
-
-        -- Iterate through each row in the column
-        FOR row_record IN EXECUTE format('SELECT * FROM automated.%I', the_table_name) LOOP
-            -- Handle NULL values if necessary
-            IF row_record[specific_column] IS NULL THEN
-                specific_column_value := 'NULL';
-            ELSE
-                -- Quote and escape values appropriately
-                specific_column_value := quote_literal(row_record[specific_column]);
-            END IF;
-
-            -- appending the specified values into a comma-separated list
-            column_values := column_values || specific_column_value || ', ';
-        END LOOP;
-
-        -- Trim the trailing comma and space
-        column_values := rtrim(column_values, ', ');
-
-        -- Construct and execute dynamic INSERT query using values from the row_record
-		query_string := 'INSERT INTO automated.new_table (id, geom, info) VALUES (' || row_record[id_column] || ', ' || row_record[geom_column] || ', hstore(ARRAY[' || quote_literal(column_names) || '], ARRAY[' || quote_literal(column_values) || ']))';
-
-		-- Execute the dynamic query
-		EXECUTE query_string;
-
-    END LOOP;
-
-    -- Return the transformed table
-    RETURN QUERY EXECUTE 'SELECT * FROM automated.new_table';
-END $$;
-
-
-
-
-
-
-
-
-
-DROP FUNCTION get_column_names
-
-CREATE OR REPLACE FUNCTION get_column_names(the_table_name TEXT, col1_name TEXT DEFAULT NULL, col2_name TEXT DEFAULT NULL)
-RETURNS text AS $$
-DECLARE
-    column_list text;
-BEGIN
-    SELECT string_agg(column_name, ', ') INTO column_list
-    FROM information_schema.columns
-    WHERE table_schema = 'automated' AND table_name = the_table_name
-    AND (
-		(col1_name IS NULL AND col2_name IS NULL)
-		OR (column_name NOT IN (col1_name, col2_name))
-	);
-
-    RETURN column_list;
-END;
-$$ LANGUAGE plpgsql;
-
-
-
-SELECT get_column_names('sidewalks')
-SELECT get_column_names('sidewalks', 'objectid', 'unittype')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-SELECT * FROM merge_columns_to_hstore('sidewalks', 'objectid', 'wkb_geometry')
-
-
-
-
-SELECT * FROM pg_extension WHERE extname = 'hstore';
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-CREATE OR REPLACE PROCEDURE modify_table()
+CREATE OR REPLACE PROCEDURE make_sdot_table()
 LANGUAGE plpgsql AS $$
 
 DECLARE
@@ -268,7 +8,7 @@ DECLARE
 BEGIN
 	
     -- Create a new table with three columns: id, geom, and info (hstore).
-    CREATE TABLE automated.new_table (
+    CREATE TABLE automated.sdot_table (
         id INTEGER,
         geom geometry,
         info hstore
@@ -278,7 +18,7 @@ BEGIN
     FOR row_record IN (SELECT * FROM automated.sidewalks) LOOP
 	    
         -- Insert into the new table with only the necessary columns.
-        INSERT INTO automated.new_table (id, geom, info)
+        INSERT INTO automated.sdot_table (id, geom, info)
         VALUES (
         	row_record.objectid, 
         	(ST_Dump(row_record.wkb_geometry)).geom, 
@@ -413,50 +153,224 @@ BEGIN
 END $$;
 
 
-
-CALL modify_table()
-
-SELECT * FROM automated.new_table
-CREATE INDEX sdot_geom ON automated.new_table USING GIST (geom);
+CALL make_sdot_table()
+SELECT * FROM automated.sdot_table
 
 
-SELECT *
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_NAME = N'sidewalks'
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
-
-
-
-
-CREATE OR REPLACE FUNCTION modify_geom(the_table_name TEXT)
-RETURNS TABLE (id INTEGER, geom geometry, info hstore)
+CREATE OR REPLACE PROCEDURE make_osm_table()
 LANGUAGE plpgsql AS $$
+
+DECLARE
+
+    row_record RECORD;
 
 BEGIN
 	
-	EXECUTE format('
-        SELECT
-            id,
-            CASE
-                WHEN ST_GeometryType(geom) = ''LINESTRING'' THEN
-                    geom
-                WHEN ST_GeometryType(geom) = ''MULTILINESTRING'' THEN
-                    (ST_Dump(geom)).geom
-                ELSE
-                    NULL
-            END AS geom,
-            info
-        FROM
-            automated.%I', the_table_name)
-    INTO STRICT id, geom, info;
+    -- Create a new table with three columns: id, geom, and info (hstore).
+    CREATE TABLE automated.osm_table (
+        id INTEGER,
+        geom geometry,
+        info hstore
+    );
 
-    RETURN NEXT;
-   
+    -- Iterate through each row in the original table.
+    FOR row_record IN (SELECT * FROM automated.planet_osm_line) LOOP
+	    
+        -- Insert into the new table with only the necessary columns.
+        INSERT INTO automated.osm_table (id, geom, info)
+        VALUES (
+        	row_record.osm_id, 
+        	row_record.way, 
+        	hstore(
+            	ARRAY[
+					'osm_id',
+					'access',
+					'addr:housename',
+					'addr:housenumber',
+					'addr:interpolation',
+					'admin_level',
+					'aerialway',
+					'aeroway',
+					'amenity',
+					'area',
+					'barrier',
+					'bicycle',
+					'brand',
+					'bridge',
+					'boundary',
+					'building',
+					'construction',
+					'covered',
+					'culvert',
+					'cutting',
+					'denomination',
+					'disused',
+					'embankment',
+					'foot',
+					'generator:source',
+					'harbour',
+					'highway',
+					'historic',
+					'horse',
+					'intermittent',
+					'junction',
+					'landuse',
+					'layer',
+					'leisure',
+					'lock',
+					'man_made',
+					'military',
+					'motorcar',
+					'name',
+					'natural',
+					'office',
+					'oneway',
+					'operator',
+					'place',
+					'population',
+					'power',
+					'power_source',
+					'public_transport',
+					'railway',
+					'ref',
+					'religion',
+					'route',
+					'service',
+					'shop',
+					'sport',
+					'surface',
+					'toll',
+					'tourism',
+					'tower:type',
+					'tracktype',
+					'tunnel',
+					'water',
+					'waterway',
+					'wetland',
+					'width',
+					'wood',
+					'z_order',
+					'way_area',
+					'tags',
+					'way' 
+            	],
+            	ARRAY[
+            		row_record.osm_id::text, 
+            		row_record.access::text, 
+            		row_record."addr:housename"::text, 
+            		row_record."addr:housenumber"::text, 
+            		row_record."addr:interpolation"::text, 
+            		row_record.admin_level::text, 
+            		row_record.aerialway::text,
+            		row_record.aeroway::text,
+            		row_record.amenity::text,
+            		row_record.area::text,
+            		row_record.barrier::text,
+            		row_record.bicycle::text,
+            		row_record.brand::text,
+            		row_record.bridge::text,
+            		row_record.boundary::text,
+            		row_record.building::text,
+            		row_record.construction::text,
+            		row_record.covered::text,
+            		row_record.culvert::text,
+            		row_record.cutting::text,
+            		row_record.denomination::text,
+            		row_record.disused::text,
+            		row_record.embankment::text,
+            		row_record.foot::text,
+            		row_record."generator:source"::text,
+            		row_record.harbour::text,
+            		row_record.highway::text,
+            		row_record.historic::text,
+            		row_record.horse::text,
+            		row_record.intermittent::text,
+            		row_record.junction::text,
+            		row_record.landuse::text,
+            		row_record.layer::text,
+            		row_record.leisure::text,
+            		row_record.lock::text,
+            		row_record.man_made::text,
+            		row_record.military::text,
+            		row_record.motorcar::text,
+            		row_record.name::text,
+            		row_record.natural::text,
+            		row_record.office::text,
+            		row_record.oneway::text,
+            		row_record.operator::text,
+            		row_record.place::text,
+            		row_record.population::text,
+            		row_record.power::text,
+            		row_record.power_source::text,
+            		row_record.public_transport::text,
+            		row_record.railway::text,
+            		row_record.ref::text,
+            		row_record.religion::text,
+            		row_record.route::text,
+            		row_record.service::text,
+            		row_record.shop::text,
+            		row_record.sport::text,
+            		row_record.surface::text,
+            		row_record.toll::text,
+            		row_record.tourism::text,
+            		row_record."tower:type"::text,
+            		row_record.tracktype::TEXT,
+            		row_record.tunnel::TEXT,
+            		row_record.water::TEXT,
+            		row_record.waterway::TEXT,
+            		row_record.wetland::TEXT,
+            		row_record.width::TEXT,
+            		row_record.wood::TEXT,
+            		row_record.z_order::TEXT,
+            		row_record.way_area::TEXT,
+            		row_record.tags::TEXT,
+            		row_record.way::TEXT
+            	]
+        	)
+        );
+    END LOOP;
 END $$;
 
 
-SELECT modify_geom('new_table')
+CALL make_osm_table()
+SELECT * FROM automated.osm_table
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+CREATE OR REPLACE PROCEDURE osm2sdot_setup()
+LANGUAGE plpgsql AS $$
+DECLARE
+
+BEGIN 
+
+	CREATE TEMP TABLE table1 AS 
+		SELECT * 
+		FROM filter_by_bbox('osm_table', st_setsrid( st_makebox2d( st_makepoint(-13616215,6052850), st_makepoint(-13614841,6054964)), 3857))
+		WHERE info -> 'highway' = 'footway';
+		--AND info -> 'tags' = 'footway' = 'sidewalk';
+	
+	CREATE TEMP TABLE table2 AS 
+		SELECT * 
+		FROM filter_by_bbox('sdot_table', st_setsrid( st_makebox2d( st_makepoint(-13616215,6052850), st_makepoint(-13614841,6054964)), 3857));
+
+	-- index for better spatial query performance
+	-- CREATE INDEX sdot_geom ON sdot_sidewalk USING GIST (geom);
+
+END $$;
+
+DROP TABLE table1
+DROP TABLE table2
+
+
+
+CALL osm2sdot_setup()
+
+SELECT * FROM table1
 
 
 
@@ -468,30 +382,6 @@ SELECT modify_geom('new_table')
 
 
 
-
-
-
-
-
-
-
-
-
-CREATE OR REPLACE FUNCTION filter_by_bbox(table_name text, bbox box2d)
-RETURNS TABLE (id INTEGER, geom geometry, info hstore) AS $$
-BEGIN
-	RETURN QUERY EXECUTE
-		format(
-			'SELECT id, (ST_Dump(geom)).geom AS geom, info 
-				FROM automated.%I
-            	WHERE geom && %L', table_name, bbox)
-        USING bbox;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP FUNCTION filter_by_bbox(text,geometry)
-
-SELECT * FROM filter_by_bbox('new_table', st_setsrid( st_makebox2d( st_makepoint(-13616215,6052850), st_makepoint(-13614841,6054964)), 3857))
 
 
 
