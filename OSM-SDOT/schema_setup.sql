@@ -1,17 +1,6 @@
 -- INSERT DOCUMENTATION HERE --
 
 
-
--- this function will take an input of computed angle (_rad) between any 2 linestring, and an input of a tolerence angle threshold (_thresh)
--- to calculate whether or not the computed angle between 2 linestrings are within the threshold so we know if these 2 are parallel
-CREATE OR REPLACE FUNCTION public.f_within_degrees(_rad DOUBLE PRECISION, _thresh integer) RETURNS boolean AS $$
-    WITH m AS (SELECT mod(degrees(_rad)::NUMERIC, 180) AS angle)
-        ,a AS (SELECT CASE WHEN m.angle > 90 THEN m.angle - 180 ELSE m.angle END AS angle FROM m)
-    SELECT abs(a.angle) < _thresh FROM a;
-$$ LANGUAGE SQL IMMUTABLE STRICT;
-
-
-
 CREATE SCHEMA IF NOT EXISTS util;
 
 ALTER SCHEMA util OWNER TO postgres;
@@ -36,12 +25,12 @@ INSERT INTO automated.users VALUES
 
 CREATE TABLE automated.files (
 	file_id serial PRIMARY KEY,
-	user_id NOT NULL REFERENCES automated.users(user_id),
-	file_name NOT NULL TEXT,
-	description NOT NULL TEXT,
-	unique_identifier_column_name NOT NULL TEXT,
-	geom_column_name NOT NULL TEXT,
-	upload_dtm TIMESTAMP WITH TIME ZONE DEFAULT util.now_utc()
+	user_id integer NOT NULL REFERENCES automated.users(user_id),
+	file_name TEXT NOT NULL,
+	description TEXT NOT NULL,
+	unique_identifier_column_name TEXT NOT NULL,
+	geom_column_name TEXT NOT NULL,
+	upload_dtm TIMESTAMP WITH TIME ZONE DEFAULT util.f_now_utc()
 );
 
 INSERT INTO automated.files VALUES
@@ -51,7 +40,7 @@ INSERT INTO automated.files VALUES
 
 
 CREATE TABLE automated.file_data (
-	file_id REFERENCES automated.files(file_id),
+	file_id serial REFERENCES automated.files(file_id),
 	geom geometry,
 	data_attributes hstore
 );
@@ -62,7 +51,7 @@ CREATE TABLE automated.conflations (
 	conflation_id INT8 PRIMARY KEY,
 	base_file_id integer NOT NULL REFERENCES automated.files(file_id),
 	compared_file_id integer NOT NULL REFERENCES automated.files(file_id),
-	process_dtm TIMESTAMP WITH TIME ZONE DEFAULT util.now_utc()
+	process_dtm TIMESTAMP WITH TIME ZONE DEFAULT util.f_now_utc()
 );
 
 
@@ -87,18 +76,16 @@ INSERT INTO automated.statuses VALUES
 
 CREATE TABLE automated.results (
 	result_id serial PRIMARY KEY,
-	osm_id INT8 NOT NULL,
-	start_end_seg TEXT,
-	sdot_id INT4 NOT NULL,
-	highway TEXT,
-	osm_surface TEXT,
-	sdot_surface TEXT,
-	sw_width NUMERIC,
-	tags hstore,
-	conflation_score float8,
-	original_way TEXT,
-	way geometry,
 	conflation_id integer REFERENCES automated.conflations(conflation_id),
+	table1_id INT8 NOT NULL,
+	table1_info hstore,
+	table2_id INT4 NOT NULL,
+	table2_info hstore,
+	conflation_score float8,
+	table1_conflated_geometry geometry,
+	table1_original_geometry geometry,
+	table2_conflated_geometry geometry,
+	table2_original_geometry geometry,
 	default_status_id integer REFERENCES automated.statuses(status_id)
 );
 
