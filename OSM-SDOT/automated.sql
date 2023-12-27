@@ -57,7 +57,7 @@ BEGIN
 	-- index for better spatial query performance
 	CREATE INDEX bound_geom ON sdot_boundary USING GIST (geom);
 	
-	SELECT * FROM sdot_sidewalk
+	--SELECT * FROM sdot_sidewalk;
 	
 	-- SDOT sidewalk
 	CREATE TEMP TABLE sdot_sidewalk AS
