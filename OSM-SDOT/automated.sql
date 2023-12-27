@@ -4,7 +4,26 @@
 
 
 
+-- FUNCTIONS --
+
+
+-- this function will take an input of computed angle (_rad) between any 2 linestring, and an input of a tolerence angle threshold (_thresh)
+-- to calculate whether or not the computed angle between 2 linestrings are within the threshold so we know if these 2 are parallel
+CREATE OR REPLACE FUNCTION public.f_within_degrees(_rad DOUBLE PRECISION, _thresh integer) RETURNS boolean AS $$
+    WITH m AS (SELECT mod(degrees(_rad)::NUMERIC, 180) AS angle)
+        ,a AS (SELECT CASE WHEN m.angle > 90 THEN m.angle - 180 ELSE m.angle END AS angle FROM m)
+    SELECT abs(a.angle) < _thresh FROM a;
+$$ LANGUAGE SQL IMMUTABLE STRICT;
+
+
+
+
+
+
+
+
 -- DATA SETUP --
+
 
 -- This procedure pulls the necessary data from OSM and SDOT databases which are confined to a defined bounding box and creates tables
 -- formatted for efficiency in the conflation process.
@@ -19,7 +38,7 @@ DECLARE
 	-- defined boundary buffer
 	buffer integer = 15;
 
-	aps = sdot.accessible_pedestrian_signals;
+	
 
 BEGIN 
 	
@@ -38,9 +57,9 @@ BEGIN
 	-- index for better spatial query performance
 	CREATE INDEX bound_geom ON sdot_boundary USING GIST (geom);
 	
+	SELECT * FROM sdot_sidewalk
 	
-	
-		-- SDOT sidewalk
+	-- SDOT sidewalk
 	CREATE TEMP TABLE sdot_sidewalk AS
 		SELECT  
 			ogc_fid,
@@ -66,7 +85,7 @@ BEGIN
 	-- used in the crossing conflation to aid in defining crossing locations
 	CREATE TEMP TABLE sdot_accpedsig AS
 		SELECT *
-		FROM aps AS aps;
+		FROM sdot.accessible_pedestrian_signals AS aps;
 		
 	-- better naming convention
 	ALTER TABLE sdot_accpedsig RENAME COLUMN wkb_geometry TO geom;
